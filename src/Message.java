@@ -31,6 +31,9 @@ public class Message implements Serializable{
 	public void set_delayed(Boolean delay){
 		delayed = delay;
 	}
+	public Boolean get_delayed(){
+		return delayed;
+	}
 	//These getters are used by Rule.match
 	public String get_source(){
 		return src;

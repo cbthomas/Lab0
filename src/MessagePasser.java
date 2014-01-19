@@ -165,8 +165,11 @@ public class MessagePasser {
 		//first call a method to check for updates on rules
 		updateRules(config_filename);
 		//deliver a single message from the front of this input queue (if not marked as delayed)
-		Message msg = new Message("dst", "kind", "object");
-		return msg;
+		if(incoming_buffer.peek() != null){
+			if(incoming_buffer.peek().get_delayed() == false)
+				return incoming_buffer.poll();
+		}
+		return null;
 	}
 	//This is a thread that will act as a local server to accept incoming connections
 	private static class LocalServer implements Runnable{
@@ -223,8 +226,8 @@ public class MessagePasser {
 			 * thread to loop and keep reading from socket
 			 * */
 			try {
-				while(true){
-					ObjectInputStream ois = new ObjectInputStream(node.getInputStream());
+				ObjectInputStream ois = new ObjectInputStream(node.getInputStream());
+				while(true){					
 					Message msg = (Message) ois.readObject();
 					//Check against receiveRules
 					Rule currentRule = receiveRules.get(0);
@@ -251,8 +254,14 @@ public class MessagePasser {
 							for(Message currMessage : incoming_buffer){
 								currMessage.set_delayed(false);
 							}
+							//If 2 are received, they will be processed separately and will be put on the incoming_buffer
+							//    if one matches another rule, then it will be handled appropriately
 							incoming_buffer.add(msg);
 						}
+					}
+					else{
+						//If we don't match any rules, just put the message on the incoming_buffer
+						incoming_buffer.add(msg);
 					}
 					System.out.println(msg.toString());
 				}
@@ -271,7 +280,7 @@ public class MessagePasser {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			} 
-			System.out.println("Something connected!");
+			//System.out.println("Something connected!");
 		}
 	}
 }
