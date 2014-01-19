@@ -28,8 +28,8 @@ public class Message implements Serializable{
 		duplicate = dupe;
 	}
 	//This might be set by receiver thread after checking the Message against receiveRules
-	public void set_delayed(){
-		delayed = true;
+	public void set_delayed(Boolean delay){
+		delayed = delay;
 	}
 	//These getters are used by Rule.match
 	public String get_source(){

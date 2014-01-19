@@ -226,12 +226,47 @@ public class MessagePasser {
 				while(true){
 					ObjectInputStream ois = new ObjectInputStream(node.getInputStream());
 					Message msg = (Message) ois.readObject();
+					//Check against receiveRules
+					Rule currentRule = receiveRules.get(0);
+					String action = "";
+					for(int i = 0; i < receiveRules.size(); i++){
+						if(currentRule.match(msg)){
+							action = currentRule.getAction();
+						}
+					}
+					//At this point action is either the action to be performed, or "" if we didn't match any rules
+					if(!action.equals("")){
+						if(action.toLowerCase().equals("drop")){
+							//don't add the message, but must change all current msgs in incoming_buffer to not be delayed anymore
+							for(Message currMessage : incoming_buffer){
+								currMessage.set_delayed(false);
+							}
+						}
+						else if(action.toLowerCase().equals("delay")){
+							msg.set_delayed(true);
+							incoming_buffer.add(msg);
+						}
+						else if(action.toLowerCase().equals("duplicate")){
+							//must change all current msgs in incoming_buffer to not be delayed anymore
+							for(Message currMessage : incoming_buffer){
+								currMessage.set_delayed(false);
+							}
+							incoming_buffer.add(msg);
+						}
+					}
 					System.out.println(msg.toString());
 				}
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				//e.printStackTrace();
-				System.out.println("Disconnected from user: "); //find the user
+				InetAddress connectedIP = node.getInetAddress();
+				int connectedPort = node.getPort();
+				for(User currentUser : users){
+					if(!currentUser.getUser(connectedIP, connectedPort).equals("")){
+						System.out.println("Disconnected from user: " + currentUser.getUser(connectedIP, connectedPort)); //find the user
+						break;
+					}
+				}
 			} catch (ClassNotFoundException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
