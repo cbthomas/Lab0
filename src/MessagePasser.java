@@ -183,6 +183,14 @@ public class MessagePasser {
 					 * find corresponding name
 					 * store connection into "nodes" Map object
 					 * */
+					InetAddress connectedIP = aNode.getInetAddress();
+					int connectedPort = aNode.getPort();
+					for(User currentUser : users){
+						if(!currentUser.getUser(connectedIP, connectedPort).equals("")){
+							nodes.put(currentUser.getUser(connectedIP, connectedPort), aNode);
+							break;
+						}
+					}
 					threadPool.submit(new ReceiveIncomingConnections(aNode));
 				}
 			} catch (NumberFormatException e) {
