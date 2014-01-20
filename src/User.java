@@ -36,4 +36,7 @@ public class User {
 	public int getSeqNum(){
 		return seqNum;
 	}
+	public String getName(){
+		return name;
+	}
 }

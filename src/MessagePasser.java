@@ -29,7 +29,7 @@ public class MessagePasser {
 	private static Map<String, Socket> nodes;
 	//a list of all possible user names, ip, ports that aren't necessarily connected 
 	private static ArrayList<User> users;
-	private String local_user;
+	private User local_user;
     private static ServerSocket local_socket;
     private static int local_port; //set this so the information can be used by the ServerSocket thread
     private static ArrayList<Rule> sendRules;
@@ -42,7 +42,6 @@ public class MessagePasser {
 		//     (may need additional state? threads?)
 		incoming_buffer = new LinkedList<Message>();
 		outgoing_buffer = new LinkedList<Message>();
-		local_user = local_name;
 		
 		sendRules = new ArrayList<Rule>();
 		receiveRules = new ArrayList<Rule>();
@@ -68,6 +67,7 @@ public class MessagePasser {
 					//this connection info is the local host, so it should be listening, not making a connection
 					//      spin off a thread that will act as a server listening for incoming connections
 					local_port = (Integer)connection_info.get("port");
+					local_user = new User(local_name,InetAddress.getByName((String)connection_info.get("ip")),local_port );
 					Thread local = new Thread(new LocalServer());
 					local.start();
 				}
@@ -158,22 +158,22 @@ public class MessagePasser {
 		//first call a method to check for updates on rules
 		updateRules(config_filename);
 		//set the sequence number of the message before sending it
-		for(User aUser : users){
-			if(aUser.isMyName(local_user)){
-				//seqNum should be non-reused, monotonically increasing integer values
-				aUser.incrementSeqNum();
-				message.set_seqNum(aUser.getSeqNum());
-				break;
-			}
-		}		
+		//seqNum should be non-reused, monotonically increasing integer values
+		local_user.incrementSeqNum();
+		message.set_seqNum(local_user.getSeqNum());
+		message.set_source(local_user.getName());
+		message.set_duplicate(false);
+		
 		//First check the message against any SendRules before delivering the message to the socket
-		Rule currentRule = sendRules.get(0);
-		for(int i = 0; i< sendRules.size(); i++){
-			if(currentRule.match(message)){
-				action = currentRule.getAction();
-				break;
+		if(sendRules.size() > 0){
+			Rule currentRule = sendRules.get(0);
+			for(int i = 0; i< sendRules.size(); i++){
+				if(currentRule.match(message)){
+					action = currentRule.getAction();
+					break;
+				}
+				currentRule = sendRules.get(i);
 			}
-			currentRule = sendRules.get(i);
 		}
 		if(!action.equals("")){
 			//This means that the message matched a rule, so now handle one of the three possibilities appropriately
@@ -181,15 +181,28 @@ public class MessagePasser {
 				//Don't send the message and mark all delayed messages as no longer delayed
 				for(Message msg : outgoing_buffer){
 					msg.set_delayed(false);
-					return;
 				}
 			} else if(action.toLowerCase().equals("delay")){
 				message.set_delayed(true);
 				outgoing_buffer.add(message);
+				return;
 			} else if(action.toLowerCase().equals("duplicate")){
-				
+				//Mark all delayed messages as no longer delayed
+				for(Message msg : outgoing_buffer){
+					msg.set_delayed(false);
+				}
+				//add one copy of the message to our outgoing_buffer
+				outgoing_buffer.add(message);
+				//now add a copy of the message with duplicate set to true
+				Message duped = message;
+				duped.set_duplicate(true);
+				outgoing_buffer.add(duped);
 			}
 		}
+		else
+			outgoing_buffer.add(message); //message did not match any sendRules, so just send it normally
+		//By getting to this point, we want to send all messages that are in the outgoing_buffer
+		//TODO 
 		//Check to see if the connection exists
 		//     if connection exists, just send the data across that socket
 		//     if no connection exists, open connection, spin off listening thread, then send data
