@@ -4,6 +4,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -179,18 +180,18 @@ public class MessagePasser {
 			//This means that the message matched a rule, so now handle one of the three possibilities appropriately
 			if(action.toLowerCase().equals("drop")){
 				//Don't send the message and mark all delayed messages as no longer delayed
-				for(Message msg : outgoing_buffer){
+				/*for(Message msg : outgoing_buffer){
 					msg.set_delayed(false);
-				}
+				}*/
 			} else if(action.toLowerCase().equals("delay")){
-				message.set_delayed(true);
+				//message.set_delayed(true);
 				outgoing_buffer.add(message);
 				return;
 			} else if(action.toLowerCase().equals("duplicate")){
 				//Mark all delayed messages as no longer delayed
-				for(Message msg : outgoing_buffer){
+				/*for(Message msg : outgoing_buffer){
 					msg.set_delayed(false);
-				}
+				}*/
 				//add one copy of the message to our outgoing_buffer
 				outgoing_buffer.add(message);
 				//now add a copy of the message with duplicate set to true
@@ -205,9 +206,7 @@ public class MessagePasser {
 			outgoing_buffer.add(message); //message did not match any sendRules, so just send it normally
 		//By getting to this point, we want to send all messages that are in the outgoing_buffer
 		//TODO 
-		//Check to see if the connection exists
-		//     if connection exists, just send the data across that socket
-		//     if no connection exists, open connection, spin off listening thread, then send data
+		modify_outgoing();
 		
 	}
 	Message receive(){
@@ -329,6 +328,58 @@ public class MessagePasser {
 				e.printStackTrace();
 			} 
 			//System.out.println("Something connected!");
+		}
+	}
+	private void modify_outgoing(){
+		/*
+		 * For each message in outgoing_buffer
+		 * 	   check if there is a connection already open for that message
+		 * 	   if there is, send the data
+		 *     if there is not, find the right dest user, try to open socket, add to global nodes, spin off listening thread, send data
+		 *          if fail to open socket, what to do with message? inform user regardless that you cannot connect
+		 */
+		Socket sendSocket;
+		for(Message msg : outgoing_buffer){
+			sendSocket = modify_nodes(msg.get_dest(), null, 3);
+			
+			if(sendSocket == null){
+				//find the user that we're trying to send to and get their IP/port
+				for(User destUser : users){
+					if(destUser.isMyName(msg.get_dest())){
+						try {
+							//try to open a connection with that destination user
+							sendSocket = new Socket(destUser.getIP(), destUser.getPort());
+							//if connection successful, add this connection to the global nodes list
+							modify_nodes(msg.get_dest(), sendSocket, 1);
+							//now spin off a thread to listen on this socket
+							Thread newListener = new Thread(new ReceiveIncomingConnections(sendSocket));
+							newListener.start();
+							//now actually send the data
+							sendData(msg, sendSocket);
+							//break out of this for loop so we can get the next message from the outgoing_buffer
+							break;
+						} catch (IOException e) {
+							// Inform user that you cannot connect or send that message due to connection issues
+							System.out.println("Cannot connect to user " + msg.get_dest() + " at this time.\nPlease try again later.");
+						}
+					}
+				}
+			}
+			else{
+				//We already have an open connection to the message's destination, so just send the data
+				sendData(msg, sendSocket);
+			}
+		}
+	}
+	private void sendData(Message msg, Socket sendSocket){
+		try {
+			ObjectOutputStream dos = new ObjectOutputStream(sendSocket.getOutputStream());
+			dos.writeObject(msg);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			System.out.println("Failed to send message to " + msg.get_dest() + " of kind " + msg.get_kind() + " of seqNum " + msg.get_seqNum() 
+					+ "\nand data: " + msg.get_data().toString());
+			//e.printStackTrace();
 		}
 	}
 	private static synchronized Message modify_incoming(Message msg, Boolean add, Boolean changeDelay, Boolean receive){
