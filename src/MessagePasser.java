@@ -290,27 +290,23 @@ public class MessagePasser {
 					if(!action.equals("")){
 						if(action.toLowerCase().equals("drop")){
 							//don't add the message, but must change all current msgs in incoming_buffer to not be delayed anymore
-							for(Message currMessage : incoming_buffer){
-								currMessage.set_delayed(false);
-							}
+							modify_incoming(null, false);
 						}
 						else if(action.toLowerCase().equals("delay")){
 							msg.set_delayed(true);
-							incoming_buffer.add(msg);
+							modify_incoming(msg, true);
 						}
 						else if(action.toLowerCase().equals("duplicate")){
 							//must change all current msgs in incoming_buffer to not be delayed anymore
-							for(Message currMessage : incoming_buffer){
-								currMessage.set_delayed(false);
-							}
-							//If 2 are received, they will be processed separately and will be put on the incoming_buffer
-							//    if one matches another rule, then it will be handled appropriately
-							incoming_buffer.add(msg);
+							modify_incoming(null, false);
+							//add the message to the incoming_buffer twice since we matched a duplicate rule
+							modify_incoming(msg, true);
+							modify_incoming(msg, true);
 						}
 					}
 					else{
 						//If we don't match any rules, just put the message on the incoming_buffer
-						incoming_buffer.add(msg);
+						modify_incoming(msg, true);
 					}
 					System.out.println(msg.toString());
 				}
@@ -330,6 +326,15 @@ public class MessagePasser {
 				e.printStackTrace();
 			} 
 			//System.out.println("Something connected!");
+		}
+	}
+	private static synchronized void modify_incoming(Message msg, Boolean add){
+		if(add)
+			incoming_buffer.add(msg);
+		else{
+			for(Message currMessage : incoming_buffer){
+				currMessage.set_delayed(false);
+			}
 		}
 	}
 }
