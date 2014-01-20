@@ -82,7 +82,7 @@ public class MessagePasser {
 				}
 				//System.out.println(connection_info);
 			}
-			System.out.println(users);
+			//System.out.println(users);
 			updateRules(configuration_filename);
 		} catch (FileNotFoundException e) {
 			// TODO Auto-generated catch block
@@ -128,7 +128,7 @@ public class MessagePasser {
 				//add the new sendRule to the sendRule's array
 				sendRules.add(newRule);	
 			}
-			System.out.println(sendRules);
+			//System.out.println(sendRules);
 			for(Object config_item : (ArrayList<Object>) config_parsing.get("receiveRules")){
 				//each config_item is a mapping of action, and some combination of src, dest, kind, seqNum, dupe
 				Map<String, Object> rule_info = (Map<String, Object>) config_item;
@@ -148,7 +148,7 @@ public class MessagePasser {
 				//add the new sendRule to the sendRule's array
 				receiveRules.add(newRule);
 			}
-			System.out.println(receiveRules);
+			//System.out.println(receiveRules);
 		} catch (FileNotFoundException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -270,16 +270,19 @@ public class MessagePasser {
 			 * thread to loop and keep reading from socket
 			 * */
 			try {
-				ObjectInputStream ois = new ObjectInputStream(node.getInputStream());
 				while(true){			
+					ObjectInputStream ois = new ObjectInputStream(node.getInputStream());
 					//This is a blocking call that should only move on once we read in a full Message object
+					System.out.println("waiting to read in a message from a listening thread");
 					Message msg = (Message) ois.readObject();
+					System.out.println("just read in a message from a listening thread");
 					//Check against receiveRules
 					Rule currentRule = receiveRules.get(0);
 					String action = "";
 					for(int i = 0; i < receiveRules.size(); i++){
 						if(currentRule.match(msg)){
 							action = currentRule.getAction();
+							System.out.println("Matched Rule! " + currentRule.toString());
 							break;
 						}
 						currentRule = receiveRules.get(i);
@@ -307,7 +310,7 @@ public class MessagePasser {
 						modify_incoming(msg, true, true, false);
 						
 					}
-					System.out.println(msg.toString());
+					//System.out.println(msg.toString());
 				}
 			} catch (IOException e) {
 				//THIS IS WHAT HAPPENS WHEN A USER DISCONNECTS
@@ -339,7 +342,8 @@ public class MessagePasser {
 		 *          if fail to open socket, what to do with message? inform user regardless that you cannot connect
 		 */
 		Socket sendSocket;
-		for(Message msg : outgoing_buffer){
+		Message msg;
+		while( (msg = outgoing_buffer.poll()) != null){
 			sendSocket = modify_nodes(msg.get_dest(), null, 3);
 			
 			if(sendSocket == null){
@@ -347,6 +351,8 @@ public class MessagePasser {
 				for(User destUser : users){
 					if(destUser.isMyName(msg.get_dest())){
 						try {
+							System.out.println("Trying to connect to " + msg.get_dest() + "for first time to send message");
+							System.out.println("   Because current nodes are: " + nodes.toString());
 							//try to open a connection with that destination user
 							sendSocket = new Socket(destUser.getIP(), destUser.getPort());
 							//if connection successful, add this connection to the global nodes list
@@ -360,12 +366,13 @@ public class MessagePasser {
 							break;
 						} catch (IOException e) {
 							// Inform user that you cannot connect or send that message due to connection issues
-							System.out.println("Cannot connect to user " + msg.get_dest() + " at this time.\nPlease try again later.");
+							System.out.println("Cannot connect to user " + msg.get_dest() + " at this time.  Please try again later.");
 						}
 					}
 				}
 			}
 			else{
+				System.out.println("Sending a message and already have a connection to " + msg.get_dest());
 				//We already have an open connection to the message's destination, so just send the data
 				sendData(msg, sendSocket);
 			}
@@ -373,8 +380,8 @@ public class MessagePasser {
 	}
 	private void sendData(Message msg, Socket sendSocket){
 		try {
-			ObjectOutputStream dos = new ObjectOutputStream(sendSocket.getOutputStream());
-			dos.writeObject(msg);
+			ObjectOutputStream oos = new ObjectOutputStream(sendSocket.getOutputStream());
+			oos.writeObject(msg);
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			System.out.println("Failed to send message to " + msg.get_dest() + " of kind " + msg.get_kind() + " of seqNum " + msg.get_seqNum() 
@@ -396,6 +403,7 @@ public class MessagePasser {
 					return incoming_buffer.poll();
 			}
 		}
+		System.out.println(incoming_buffer.size() + " Message(s) now on incoming_buffer");
 		return null;
 	}
 	private static synchronized Socket modify_nodes(String name, Socket sock, int action){

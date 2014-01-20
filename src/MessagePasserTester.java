@@ -55,6 +55,6 @@ public class MessagePasserTester {
 			e.printStackTrace();
 		}
 		
-		//MessagePasser MP = new MessagePasser("/Users/Cody/Google Drive/Spring 2014/DS/Lab0/config_file.yaml", "alice");
+		//MessagePasser MP = new MessagePasser("/Users/Cody/Documents/DistributedSystems/Lab0/config_file.yaml", "alice");
 	}
 }
