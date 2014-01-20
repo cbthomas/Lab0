@@ -51,6 +51,6 @@ public class Message implements Serializable{
 		return duplicate;
 	}
 	public String toString(){
-		return "from: " + src + "kind: " + kind + "msg: " + data.toString();
+		return "from=" + src + " kind=" + kind + " msg:\n\t" + data.toString();
 	}
 }
