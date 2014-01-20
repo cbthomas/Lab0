@@ -31,7 +31,7 @@ public class MessagePasserTester {
 					kind = br.readLine();
 					System.out.print("What is the data: ");
 					data = br.readLine();
-					System.out.println("Sending message......");
+					System.out.println("Processing message......");
 					MP.send(new Message(dest, kind, data));
 				}else if(selection == 2){
 					System.out.println("Checking....");

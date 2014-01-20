@@ -50,6 +50,9 @@ public class Message implements Serializable{
 	public Boolean get_dupe(){
 		return duplicate;
 	}
+	public Object get_data(){
+		return data;
+	}
 	public String toString(){
 		return "from=" + src + " kind=" + kind + " msg:\n\t" + data.toString();
 	}

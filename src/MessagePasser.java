@@ -194,7 +194,9 @@ public class MessagePasser {
 				//add one copy of the message to our outgoing_buffer
 				outgoing_buffer.add(message);
 				//now add a copy of the message with duplicate set to true
-				Message duped = message;
+				Message duped = new Message(message.get_dest(), message.get_kind(), message.get_data());
+				duped.set_seqNum(local_user.getSeqNum());
+				duped.set_source(local_user.getName());
 				duped.set_duplicate(true);
 				outgoing_buffer.add(duped);
 			}
@@ -212,11 +214,7 @@ public class MessagePasser {
 		//first call a method to check for updates on rules
 		updateRules(config_filename);
 		//deliver a single message from the front of this input queue (if not marked as delayed)
-		if(incoming_buffer.peek() != null){
-			if(incoming_buffer.peek().get_delayed() == false)
-				return incoming_buffer.poll();
-		}
-		return null;
+		return modify_incoming(null, false, false, true);
 	}
 	//This is a thread that will act as a local server to accept incoming connections
 	private static class LocalServer implements Runnable{
@@ -224,7 +222,7 @@ public class MessagePasser {
 		public void run(){
 			try {
 				local_socket = new ServerSocket(local_port);
-				System.out.println("Made a ServerSocket and about to listen\n");
+				//System.out.println("Made a ServerSocket and about to listen\n");
 				while(true){
 					//wait for a connection and put it into aNode
 					Socket aNode = local_socket.accept();
@@ -237,7 +235,7 @@ public class MessagePasser {
 					int connectedPort = aNode.getPort();
 					for(User currentUser : users){
 						if(!currentUser.getUser(connectedIP, connectedPort).equals("")){
-							nodes.put(currentUser.getUser(connectedIP, connectedPort), aNode);
+							modify_nodes(currentUser.getUser(connectedIP, connectedPort), aNode, 1);
 							break;
 						}
 					}
@@ -274,7 +272,8 @@ public class MessagePasser {
 			 * */
 			try {
 				ObjectInputStream ois = new ObjectInputStream(node.getInputStream());
-				while(true){					
+				while(true){			
+					//This is a blocking call that should only move on once we read in a full Message object
 					Message msg = (Message) ois.readObject();
 					//Check against receiveRules
 					Rule currentRule = receiveRules.get(0);
@@ -290,34 +289,38 @@ public class MessagePasser {
 					if(!action.equals("")){
 						if(action.toLowerCase().equals("drop")){
 							//don't add the message, but must change all current msgs in incoming_buffer to not be delayed anymore
-							modify_incoming(null, false);
+							modify_incoming(null, false, true, false);
 						}
 						else if(action.toLowerCase().equals("delay")){
 							msg.set_delayed(true);
-							modify_incoming(msg, true);
+							modify_incoming(msg, true, false, false);
 						}
 						else if(action.toLowerCase().equals("duplicate")){
 							//must change all current msgs in incoming_buffer to not be delayed anymore
-							modify_incoming(null, false);
 							//add the message to the incoming_buffer twice since we matched a duplicate rule
-							modify_incoming(msg, true);
-							modify_incoming(msg, true);
+							modify_incoming(msg, true, false, false);
+							modify_incoming(msg, true, true, false);
 						}
 					}
 					else{
 						//If we don't match any rules, just put the message on the incoming_buffer
-						modify_incoming(msg, true);
+						//since we received something that wasn't delay, we make sure everything is changed from delay on the buffer
+						modify_incoming(msg, true, true, false);
+						
 					}
 					System.out.println(msg.toString());
 				}
 			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				//e.printStackTrace();
+				//THIS IS WHAT HAPPENS WHEN A USER DISCONNECTS
 				InetAddress connectedIP = node.getInetAddress();
 				int connectedPort = node.getPort();
+				String connectedUser;
 				for(User currentUser : users){
 					if(!currentUser.getUser(connectedIP, connectedPort).equals("")){
-						System.out.println("Disconnected from user: " + currentUser.getUser(connectedIP, connectedPort)); //find the user
+						connectedUser = currentUser.getUser(connectedIP, connectedPort);
+						System.out.println("Disconnected from user: " + connectedUser); //find the user
+						//make sure that this user's connection Socket is removed from the global Map<String, Socket> nodes
+						modify_nodes(connectedUser, null, 2);
 						break;
 					}
 				}
@@ -328,13 +331,42 @@ public class MessagePasser {
 			//System.out.println("Something connected!");
 		}
 	}
-	private static synchronized void modify_incoming(Message msg, Boolean add){
+	private static synchronized Message modify_incoming(Message msg, Boolean add, Boolean changeDelay, Boolean receive){
 		if(add)
 			incoming_buffer.add(msg);
-		else{
+		if(changeDelay){
 			for(Message currMessage : incoming_buffer){
 				currMessage.set_delayed(false);
 			}
 		}
+		if(receive){
+			if(incoming_buffer.peek() != null){
+				if(incoming_buffer.peek().get_delayed() == false)
+					return incoming_buffer.poll();
+			}
+		}
+		return null;
+	}
+	private static synchronized Socket modify_nodes(String name, Socket sock, int action){
+		//Add or remove a user from the global Map of nodes (active connections)
+		/*
+		 * Action of 1 means to add name/socket pair to the global map
+		 * Action of 2 means to remove node 'name' from global map
+		 * Action of 3 means to check if there is an active connection for name, and return it if it exists*/
+		if(action == 1){
+			nodes.put(name, sock);
+		}
+		else if(action == 2){
+			nodes.remove(name);
+		}
+		else if(action == 3){
+			for(String key : nodes.keySet()){
+				if(key.equals(name)){
+					//this means there is an active connection, so return the socket
+					return nodes.get(key);
+				}
+			}
+		}
+		return null;
 	}
 }
