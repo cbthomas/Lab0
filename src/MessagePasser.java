@@ -273,9 +273,9 @@ public class MessagePasser {
 				while(true){			
 					ObjectInputStream ois = new ObjectInputStream(node.getInputStream());
 					//This is a blocking call that should only move on once we read in a full Message object
-					System.out.println("waiting to read in a message from a listening thread");
+					//System.out.println("waiting to read in a message from a listening thread");
 					Message msg = (Message) ois.readObject();
-					System.out.println("just read in a message from a listening thread");
+					//System.out.println("just read in a message from a listening thread");
 					//Check against receiveRules
 					Rule currentRule = receiveRules.get(0);
 					String action = "";
