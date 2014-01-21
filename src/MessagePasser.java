@@ -168,12 +168,14 @@ public class MessagePasser {
 		//First check the message against any SendRules before delivering the message to the socket
 		if(sendRules.size() > 0){
 			Rule currentRule = sendRules.get(0);
-			for(int i = 0; i< sendRules.size(); i++){
+			for(int i = 0; i< sendRules.size(); currentRule = sendRules.get(i++)){
+				System.out.println("checking current sendRule: " + currentRule.toString());
 				if(currentRule.match(message)){
+					System.out.println("Matched a sendRule: " + currentRule.toString());
 					action = currentRule.getAction();
 					break;
 				}
-				currentRule = sendRules.get(i);
+				//currentRule = sendRules.get(i);
 			}
 		}
 		if(!action.equals("")){
@@ -279,13 +281,13 @@ public class MessagePasser {
 					//Check against receiveRules
 					Rule currentRule = receiveRules.get(0);
 					String action = "";
-					for(int i = 0; i < receiveRules.size(); i++){
+					for(int i = 0; i < receiveRules.size(); currentRule = receiveRules.get(i++)){
 						if(currentRule.match(msg)){
 							action = currentRule.getAction();
 							System.out.println("Matched Rule! " + currentRule.toString());
 							break;
 						}
-						currentRule = receiveRules.get(i);
+						//currentRule = receiveRules.get(i);
 					}
 					//At this point action is either the action to be performed, or "" if we didn't match any rules
 					if(!action.equals("")){
