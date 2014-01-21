@@ -21,7 +21,7 @@ import org.yaml.snakeyaml.Yaml;
 
 public class MessagePasser {
 	private static Queue<Message> incoming_buffer; //buffer of what is coming into this instance of MP
-	private Queue<Message> outgoing_buffer; //buffer of what this instance of MP is sending out
+	private LinkedList<Message> outgoing_buffer; //buffer of what this instance of MP is sending out
 	private Yaml yaml; //This will parse the configuration_filename
 	private long last_modified; //last modified time for the configuration_filename.yaml
 	private static String config_filename;
@@ -169,7 +169,6 @@ public class MessagePasser {
 		if(sendRules.size() > 0){
 			Rule currentRule = sendRules.get(0);
 			for(int i = 0; i< sendRules.size(); currentRule = sendRules.get(i++)){
-				System.out.println("checking current sendRule: " + currentRule.toString());
 				if(currentRule.match(message)){
 					System.out.println("Matched a sendRule: " + currentRule.toString());
 					action = currentRule.getAction();
@@ -195,19 +194,18 @@ public class MessagePasser {
 					msg.set_delayed(false);
 				}*/
 				//add one copy of the message to our outgoing_buffer
-				outgoing_buffer.add(message);
+				outgoing_buffer.addFirst(message);
 				//now add a copy of the message with duplicate set to true
 				Message duped = new Message(message.get_dest(), message.get_kind(), message.get_data());
 				duped.set_seqNum(local_user.getSeqNum());
 				duped.set_source(local_user.getName());
 				duped.set_duplicate(true);
-				outgoing_buffer.add(duped);
+				outgoing_buffer.addFirst(duped);
 			}
 		}
 		else
-			outgoing_buffer.add(message); //message did not match any sendRules, so just send it normally
+			outgoing_buffer.addFirst(message); //message did not match any sendRules, so just send it normally
 		//By getting to this point, we want to send all messages that are in the outgoing_buffer
-		//TODO 
 		modify_outgoing();
 		
 	}
@@ -284,7 +282,7 @@ public class MessagePasser {
 					for(int i = 0; i < receiveRules.size(); currentRule = receiveRules.get(i++)){
 						if(currentRule.match(msg)){
 							action = currentRule.getAction();
-							System.out.println("Matched Rule! " + currentRule.toString());
+							System.out.println("Matched receiveRule! " + currentRule.toString());
 							break;
 						}
 						//currentRule = receiveRules.get(i);
@@ -388,6 +386,8 @@ public class MessagePasser {
 			// TODO Auto-generated catch block
 			System.out.println("Failed to send message to " + msg.get_dest() + " of kind " + msg.get_kind() + " of seqNum " + msg.get_seqNum() 
 					+ "\nand data: " + msg.get_data().toString());
+			System.out.println("The message has been added back to the queue for a later attempt.");
+			outgoing_buffer.add(msg);
 			//e.printStackTrace();
 		}
 	}
