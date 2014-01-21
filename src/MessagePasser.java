@@ -291,6 +291,7 @@ public class MessagePasser {
 					if(!action.equals("")){
 						if(action.toLowerCase().equals("drop")){
 							//don't add the message, but must change all current msgs in incoming_buffer to not be delayed anymore
+							//modify_incoming(Message, add_to_queue, mark_everything_as_not_delayed, receive_a_message_from_queue)
 							modify_incoming(null, false, true, false);
 						}
 						else if(action.toLowerCase().equals("delay")){
