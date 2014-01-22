@@ -360,33 +360,40 @@ public class MessagePasser {
 			sendSocket = modify_nodes(msg.get_dest(), null, 3);
 			
 			if(sendSocket == null){
+				User foundUser = null;
 				//find the user that we're trying to send to and get their IP/port
 				for(User destUser : users){
 					if(destUser.isMyName(msg.get_dest())){
-						try {
-							System.out.println("Trying to connect to " + msg.get_dest() + "for first time to send message");
-							System.out.println("   Because current nodes are: " + nodes.toString());
-							//try to open a connection with that destination user
-							sendSocket = new Socket(destUser.getIP(), destUser.getPort());
-							//if connection successful, add this connection to the global nodes list
-							modify_nodes(msg.get_dest(), sendSocket, 1);
-							//now spin off a thread to listen on this socket
-							Thread newListener = new Thread(new ReceiveIncomingConnections(sendSocket));
-							newListener.start();
-							//now actually send the data
-							sendData(msg, sendSocket);
-							//break out of this for loop so we can get the next message from the outgoing_buffer
-							break;
-						} catch (IOException e) {
-							// Inform user that you cannot connect or send that message due to connection issues
-							System.out.println("Cannot connect to user " + msg.get_dest() + " at this time.  Please try again later.");
-							msg.set_delayed(true);
-							outgoing_buffer.add(msg);
-						}
+						foundUser = destUser;
+						break;
 					}
 				}
-			}
-			else{
+				if(foundUser != null){
+					try {
+						System.out.println("Trying to connect to " + msg.get_dest() + "for first time to send message");
+						System.out.println("   Because current nodes are: " + nodes.toString());
+						//try to open a connection with that destination user
+						sendSocket = new Socket(foundUser.getIP(), foundUser.getPort());
+						//if connection successful, add this connection to the global nodes list
+						modify_nodes(msg.get_dest(), sendSocket, 1);
+						//now spin off a thread to listen on this socket
+						Thread newListener = new Thread(new ReceiveIncomingConnections(sendSocket));
+						newListener.start();
+						//now actually send the data
+						sendData(msg, sendSocket);
+						//break out of this for loop so we can get the next message from the outgoing_buffer
+						break;
+					} catch (IOException e) {
+						// Inform user that you cannot connect or send that message due to connection issues
+						System.out.println("Cannot connect to user " + msg.get_dest() + " at this time.  Please try again later.");
+						msg.set_delayed(true);
+						outgoing_buffer.add(msg);
+						}
+					}else{
+						//this means the user isn't in our list
+						System.out.println("Sorry, but user " + msg.get_dest() + " is not in our system.");
+					}				
+			}else{
 				System.out.println("Sending a message and already have a connection to " + msg.get_dest());
 				//We already have an open connection to the message's destination, so just send the data
 				sendData(msg, sendSocket);
