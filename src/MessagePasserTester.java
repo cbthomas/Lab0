@@ -20,39 +20,46 @@ public class MessagePasserTester {
 			//Now that we have the config filename and local name, we can instantiate our MessagePasser
 			MessagePasser MP = new MessagePasser(config_file, local_name);
 			//Now to prompt the user for what to do
-			System.out.println("Please input a number for your selection (1-3):\n"
-					+ "1. Send Message\n2. Check Messages\n3. Exit");
-			selection = Integer.parseInt(br.readLine());
-			while(selection != 3){
-				if(selection == 1){
-					System.out.print("Please name the destination: ");
-					dest = br.readLine();
-					System.out.print("Specify the kind of message: ");
-					kind = br.readLine();
-					System.out.print("What is the data: ");
-					data = br.readLine();
-					System.out.println("Processing message......");
-					MP.send(new Message(dest, kind, data));
-				}else if(selection == 2){
-					System.out.println("Checking....");
-					receivedMsg = MP.receive();
-					if(receivedMsg != null)
-						System.out.println("You have received the following message:\n" + receivedMsg.toString());
-					else
-						System.out.println("You have no new messages ready at this time.");
-					
-				}else{
-					System.out.println("Sorry, that was not a valid command. Please try again\n");
+			
+			while(true){
+				try{
+					System.out.println("Please input a number for your selection (1-3):\n"
+							+ "1. Send Message\n2. Check Messages\n3. Exit");
+					selection = Integer.parseInt(br.readLine());
+					if(selection == 1){
+						System.out.print("Please name the destination: ");
+						dest = br.readLine();
+						System.out.print("Specify the kind of message: ");
+						kind = br.readLine();
+						System.out.print("What is the data: ");
+						data = br.readLine();
+						System.out.println("Processing message......");
+						MP.send(new Message(dest, kind, data));
+					}else if(selection == 2){
+						System.out.println("Checking....");
+						receivedMsg = MP.receive();
+						if(receivedMsg != null)
+							System.out.println("You have received the following message:\n" + receivedMsg.toString());
+						else
+							System.out.println("You have no new messages ready at this time.");
+						
+					}else if(selection == 3){
+						System.out.println("Thank you for sending messages with MessagePasser!");
+						System.exit(1);
+					}
+					else{
+						System.out.println("Sorry, that was not a valid command. Please try again\n");
+					}
 				}
-				System.out.println("Please input a number for your selection (1-3):\n"
-						+ "1. Send Message\n2. Check Messages\n3. Exit");
-				selection = Integer.parseInt(br.readLine());
+				catch(NumberFormatException e){
+					System.out.println("Sorry, you input an invalid command. Please start over.");
+				}
 			}
-			System.out.println("Thank you for sending messages with MessagePasser!");
-			System.exit(1);
+			
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
-			e.printStackTrace();
+			//e.printStackTrace();
+			System.out.println("I don't understand your input. Please try again.");
 		}
 		
 		//MessagePasser MP = new MessagePasser("/Users/Cody/Documents/DistributedSystems/Lab0/config_file.yaml", "alice");

@@ -151,7 +151,8 @@ public class MessagePasser {
 			//System.out.println(receiveRules);
 		} catch (FileNotFoundException e) {
 			// TODO Auto-generated catch block
-			e.printStackTrace();
+			//e.printStackTrace();
+			System.out.println("Error updating rules. All rules have been deleted. Please check your config file.");
 		}
 	}
 	void send(Message message){
