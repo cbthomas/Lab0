@@ -155,6 +155,7 @@ public class MessagePasser {
 		}
 	}
 	void send(Message message){
+		modify_nodes(null, null, 4);
 		String action = "";
 		//first call a method to check for updates on rules
 		updateRules(config_filename);
@@ -164,13 +165,13 @@ public class MessagePasser {
 		message.set_seqNum(local_user.getSeqNum());
 		message.set_source(local_user.getName());
 		message.set_duplicate(false);
-		
+		System.out.println(message + "seqNum: " + message.get_seqNum());
 		//First check the message against any SendRules before delivering the message to the socket
 		if(sendRules.size() > 0){
 			Rule currentRule = sendRules.get(0);
 			for(int i = 0; i< sendRules.size(); i++){
 				currentRule = sendRules.get(i);
-				System.out.println("checking sendRule: " + currentRule.toString() + "..... i=" + i);
+				System.out.println("checking sendRule: " + currentRule.toString());
 				if(currentRule.match(message)){
 					System.out.println("Matched a sendRule: " + currentRule.toString());
 					action = currentRule.getAction();
@@ -209,6 +210,11 @@ public class MessagePasser {
 			outgoing_buffer.addFirst(message); //message did not match any sendRules, so just send it normally
 		//By getting to this point, we want to send all messages that are in the outgoing_buffer
 		modify_outgoing();
+		//Now, all that's left on the outgoing_buffer are messages that we couldn't send due to connection issues
+		//We need to mark them as no longer delayed so that we can try sending them the next time we call send
+		for(Message msg : outgoing_buffer){
+			msg.set_delayed(false);
+		}
 		
 	}
 	Message receive(){
@@ -347,7 +353,9 @@ public class MessagePasser {
 		 */
 		Socket sendSocket;
 		Message msg;
-		while( (msg = outgoing_buffer.poll()) != null){
+		//while( (msg = outgoing_buffer.poll()) != null){
+		while( outgoing_buffer.peek() != null && outgoing_buffer.peek().get_delayed() == false){
+			msg = outgoing_buffer.poll();
 			sendSocket = modify_nodes(msg.get_dest(), null, 3);
 			
 			if(sendSocket == null){
@@ -371,6 +379,8 @@ public class MessagePasser {
 						} catch (IOException e) {
 							// Inform user that you cannot connect or send that message due to connection issues
 							System.out.println("Cannot connect to user " + msg.get_dest() + " at this time.  Please try again later.");
+							msg.set_delayed(true);
+							outgoing_buffer.add(msg);
 						}
 					}
 				}
@@ -431,6 +441,10 @@ public class MessagePasser {
 					return nodes.get(key);
 				}
 			}
+		}
+		else if(action == 4){
+			//just for debugging purposes
+			System.out.println(nodes);
 		}
 		return null;
 	}

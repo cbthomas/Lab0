@@ -31,7 +31,7 @@ public class User {
 		return "{name=" + name + " ip=" + ip.toString() + " port=" + port + "}";
 	}
 	public void incrementSeqNum(){
-		seqNum = seqNum++;
+		seqNum++;
 	}
 	public int getSeqNum(){
 		return seqNum;
