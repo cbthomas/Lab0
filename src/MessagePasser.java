@@ -244,10 +244,11 @@ public class MessagePasser {
 					for(User currentUser : users){
 						if(!currentUser.getUser(connectedIP, connectedPort).equals("")){
 							modify_nodes(currentUser.getUser(connectedIP, connectedPort), aNode, 1);
+							threadPool.submit(new ReceiveIncomingConnections(aNode));
 							break;
 						}
 					}
-					threadPool.submit(new ReceiveIncomingConnections(aNode));
+					
 				}
 			} catch (NumberFormatException e) {
 				// TODO Auto-generated catch block
