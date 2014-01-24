@@ -1,3 +1,7 @@
+/*
+ * Created by: Cody Thomas, Hao Gao
+ * Created on: January 24, 2014
+ * Created for: Carnegie Mellon University, Distributed Systems, Lab0*/
 import java.net.InetAddress;
 
 
@@ -12,9 +16,9 @@ public class User {
 		this.port = port;
 		seqNum = 0;
 	}
-	//If the supplied IP/Port combination belongs to this user, return the user's name
-	public String getUser(InetAddress ip, int port){
-		if(this.ip == ip && this.port == port)
+	//If the supplied IP belongs to this user, return the user's name
+	public String getUser(InetAddress ip){
+		if(this.ip.equals(ip))
 			return name;
 		return "";
 	}

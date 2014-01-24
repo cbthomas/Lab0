@@ -1,10 +1,12 @@
+/*
+ * Created by: Cody Thomas, Hao Gao
+ * Created on: January 24, 2014
+ * Created for: Carnegie Mellon University, Distributed Systems, Lab0*/
 import java.io.Serializable;
 
 
 public class Message implements Serializable{
-	/**
-	 * 
-	 */
+
 	private static final long serialVersionUID = 1L;
 	//each message in entire system will have a unique combination of source/seq Num
 	private String src, dest, kind;
@@ -54,6 +56,6 @@ public class Message implements Serializable{
 		return data;
 	}
 	public String toString(){
-		return "from=" + src + " kind=" + kind + " msg:\n\t" + data.toString();
+		return "from=" + src + " kind=" + kind + " \n\tmsg: " + data.toString();
 	}
 }

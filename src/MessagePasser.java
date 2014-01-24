@@ -1,3 +1,8 @@
+/*
+ * Created by: Cody Thomas, Hao Gao
+ * Created on: January 24, 2014
+ * Created for: Carnegie Mellon University, Distributed Systems, Lab0*/
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -73,10 +78,7 @@ public class MessagePasser {
 					local.start();
 				}
 				else{
-					//Add this connection (name, ip, port) to a socket, Node in nodes
-					//    I want to store this info without making the connection yet!
-					//Socket sock = new Socket(InetAddress.getByName((String)connection_info.get("ip")), (Integer)connection_info.get("port"));
-					//nodes.put((String)connection_info.get("name"), sock);
+					//Add this connection (name, ip, port) to a global list of all possible connections
 					User currentUser = new User((String)connection_info.get("name"),InetAddress.getByName((String)connection_info.get("ip")), (Integer)connection_info.get("port"));
 					users.add(currentUser);
 				}
@@ -156,7 +158,6 @@ public class MessagePasser {
 		}
 	}
 	void send(Message message){
-		modify_nodes(null, null, 4);
 		String action = "";
 		//first call a method to check for updates on rules
 		updateRules(config_filename);
@@ -166,15 +167,15 @@ public class MessagePasser {
 		message.set_seqNum(local_user.getSeqNum());
 		message.set_source(local_user.getName());
 		message.set_duplicate(false);
-		System.out.println(message + "seqNum: " + message.get_seqNum());
+		//System.out.println(message + "seqNum: " + message.get_seqNum());
 		//First check the message against any SendRules before delivering the message to the socket
 		if(sendRules.size() > 0){
 			Rule currentRule = sendRules.get(0);
 			for(int i = 0; i< sendRules.size(); i++){
 				currentRule = sendRules.get(i);
-				System.out.println("checking sendRule: " + currentRule.toString());
+				//System.out.println("checking sendRule: " + currentRule.toString());
 				if(currentRule.match(message)){
-					System.out.println("Matched a sendRule: " + currentRule.toString());
+					//System.out.println("Matched a sendRule: " + currentRule.toString());
 					action = currentRule.getAction();
 					break;
 				}
@@ -215,6 +216,7 @@ public class MessagePasser {
 		//We need to mark them as no longer delayed so that we can try sending them the next time we call send
 		for(Message msg : outgoing_buffer){
 			msg.set_delayed(false);
+			//System.out.println("Still on outgoing buffer: " + msg);
 		}
 		
 	}
@@ -235,15 +237,14 @@ public class MessagePasser {
 					//wait for a connection and put it into aNode
 					Socket aNode = local_socket.accept();
 					/*
-					 * get remote IP/port
+					 * get remote IP
 					 * find corresponding name
 					 * store connection into "nodes" Map object
 					 * */
 					InetAddress connectedIP = aNode.getInetAddress();
-					int connectedPort = aNode.getPort();
 					for(User currentUser : users){
-						if(!currentUser.getUser(connectedIP, connectedPort).equals("")){
-							modify_nodes(currentUser.getUser(connectedIP, connectedPort), aNode, 1);
+						if(!currentUser.getUser(connectedIP).equals("")){
+							modify_nodes(currentUser.getUser(connectedIP), aNode, 1);
 							threadPool.submit(new ReceiveIncomingConnections(aNode));
 							break;
 						}
@@ -252,10 +253,12 @@ public class MessagePasser {
 				}
 			} catch (NumberFormatException e) {
 				// TODO Auto-generated catch block
-				e.printStackTrace();
+				//e.printStackTrace();
+				System.out.println("Could not receive message properly. Connection not made.");
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
-				e.printStackTrace();
+				//e.printStackTrace();
+				System.out.println("Could not receive message properly. Connection not made.");
 			} finally{
 				try{
 					local_socket.close();
@@ -293,7 +296,7 @@ public class MessagePasser {
 						currentRule = receiveRules.get(i);
 						if(currentRule.match(msg)){
 							action = currentRule.getAction();
-							System.out.println("Matched receiveRule! " + currentRule.toString());
+							//System.out.println("Matched receiveRule! " + currentRule.toString());
 							break;
 						}
 						//currentRule = receiveRules.get(i);
@@ -327,11 +330,10 @@ public class MessagePasser {
 			} catch (IOException e) {
 				//THIS IS WHAT HAPPENS WHEN A USER DISCONNECTS
 				InetAddress connectedIP = node.getInetAddress();
-				int connectedPort = node.getPort();
 				String connectedUser;
 				for(User currentUser : users){
-					if(!currentUser.getUser(connectedIP, connectedPort).equals("")){
-						connectedUser = currentUser.getUser(connectedIP, connectedPort);
+					if(!currentUser.getUser(connectedIP).equals("")){
+						connectedUser = currentUser.getUser(connectedIP);
 						System.out.println("Disconnected from user: " + connectedUser); //find the user
 						//make sure that this user's connection Socket is removed from the global Map<String, Socket> nodes
 						modify_nodes(connectedUser, null, 2);
@@ -340,7 +342,8 @@ public class MessagePasser {
 				}
 			} catch (ClassNotFoundException e) {
 				// TODO Auto-generated catch block
-				e.printStackTrace();
+				//e.printStackTrace();
+				System.out.println("There was a problem receiving a message.");
 			} 
 			//System.out.println("Something connected!");
 		}
@@ -355,7 +358,6 @@ public class MessagePasser {
 		 */
 		Socket sendSocket;
 		Message msg;
-		//while( (msg = outgoing_buffer.poll()) != null){
 		while( outgoing_buffer.peek() != null && outgoing_buffer.peek().get_delayed() == false){
 			msg = outgoing_buffer.poll();
 			sendSocket = modify_nodes(msg.get_dest(), null, 3);
@@ -371,8 +373,8 @@ public class MessagePasser {
 				}
 				if(foundUser != null){
 					try {
-						System.out.println("Trying to connect to " + msg.get_dest() + "for first time to send message");
-						System.out.println("   Because current nodes are: " + nodes.toString());
+						//System.out.println("Trying to connect to " + msg.get_dest() + " for first time to send message");
+						//System.out.println("   Because current nodes are: " + nodes.toString());
 						//try to open a connection with that destination user
 						sendSocket = new Socket(foundUser.getIP(), foundUser.getPort());
 						//if connection successful, add this connection to the global nodes list
@@ -382,8 +384,6 @@ public class MessagePasser {
 						newListener.start();
 						//now actually send the data
 						sendData(msg, sendSocket);
-						//break out of this for loop so we can get the next message from the outgoing_buffer
-						break;
 					} catch (IOException e) {
 						// Inform user that you cannot connect or send that message due to connection issues
 						System.out.println("Cannot connect to user " + msg.get_dest() + " at this time.  Please try again later.");
@@ -395,7 +395,7 @@ public class MessagePasser {
 						System.out.println("Sorry, but user " + msg.get_dest() + " is not in our system.");
 					}				
 			}else{
-				System.out.println("Sending a message and already have a connection to " + msg.get_dest());
+				//System.out.println("Sending a message and already have a connection to " + msg.get_dest());
 				//We already have an open connection to the message's destination, so just send the data
 				sendData(msg, sendSocket);
 			}
@@ -428,7 +428,7 @@ public class MessagePasser {
 					return incoming_buffer.poll();
 			}
 		}
-		System.out.println(incoming_buffer.size() + " Message(s) now on incoming_buffer");
+		//System.out.println(incoming_buffer.size() + " Message(s) now on incoming_buffer");
 		return null;
 	}
 	private static synchronized Socket modify_nodes(String name, Socket sock, int action){

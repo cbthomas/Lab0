@@ -1,3 +1,7 @@
+/*
+ * Created by: Cody Thomas, Hao Gao
+ * Created on: January 24, 2014
+ * Created for: Carnegie Mellon University, Distributed Systems, Lab0*/
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
