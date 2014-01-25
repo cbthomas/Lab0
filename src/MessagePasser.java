@@ -334,7 +334,7 @@ public class MessagePasser {
 				for(User currentUser : users){
 					if(!currentUser.getUser(connectedIP).equals("")){
 						connectedUser = currentUser.getUser(connectedIP);
-						System.out.println("Disconnected from user: " + connectedUser); //find the user
+						//System.out.println("Disconnected from user: " + connectedUser); //find the user
 						//make sure that this user's connection Socket is removed from the global Map<String, Socket> nodes
 						modify_nodes(connectedUser, null, 2);
 						break;

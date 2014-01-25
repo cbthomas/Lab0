@@ -56,6 +56,6 @@ public class Message implements Serializable{
 		return data;
 	}
 	public String toString(){
-		return "from=" + src + " kind=" + kind + " \n\tmsg: " + data.toString();
+		return "from=" + src + " kind=" + kind + " seqNum=" + seqNum + " \n\tmsg: " + data.toString();
 	}
 }
