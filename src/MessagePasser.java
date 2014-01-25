@@ -124,7 +124,7 @@ public class MessagePasser {
 				if(rule_info.containsKey("seqNum"))
 					newRule.setSeqNum((Integer)rule_info.get("seqNum"));
 				if(rule_info.containsKey("dupe")){
-					if(((String)rule_info.get("dupe")).equals("true"))
+					if(((Boolean)rule_info.get("dupe")) == true)
 						newRule.setDupe(true);
 				}
 				//add the new sendRule to the sendRule's array
@@ -144,7 +144,7 @@ public class MessagePasser {
 				if(rule_info.containsKey("seqNum"))
 					newRule.setSeqNum((Integer)rule_info.get("seqNum"));
 				if(rule_info.containsKey("dupe")){
-					if(((String)rule_info.get("dupe")).equals("true"))
+					if(((Boolean)rule_info.get("dupe")) == true)
 						newRule.setDupe(true);
 				}
 				//add the new sendRule to the sendRule's array
