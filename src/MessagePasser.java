@@ -242,14 +242,15 @@ public class MessagePasser {
 					 * store connection into "nodes" Map object
 					 * */
 					/*InetAddress connectedIP = aNode.getInetAddress();
+					int fromPort = aNode.getPort();
 					for(User currentUser : users){
 						if(!currentUser.getUser(connectedIP).equals("")){
-							modify_nodes(currentUser.getUser(connectedIP), aNode, 1);
+							modify_nodes(currentUser.getUser(connectedIP, fromPort), aNode, 1);
 							threadPool.submit(new ReceiveIncomingConnections(aNode));
 							break;
 						}
 					}*/
-					threadPool.submit(new ReceiveIncomingConnections(aNode));
+					threadPool.submit(new ReceiveIncomingConnections(aNode, false));
 					
 				}
 			} catch (NumberFormatException e) {
@@ -274,8 +275,12 @@ public class MessagePasser {
 		Socket node;
 		Boolean identified_source = false;
 		String listening_for = "";
-		public ReceiveIncomingConnections(Socket node){
+		public ReceiveIncomingConnections(Socket node, Boolean identified){
 			this.node = node;
+			//this pertains to if we know the right port for the connecting user or not
+			//identified being true initially means we initiated the connection to the listening port
+			//identified being false initially means we got a connection and need to find the right user
+			identified_source = identified;
 		}
 		public void run(){
 			/*
@@ -293,7 +298,10 @@ public class MessagePasser {
 					Message msg = (Message) ois.readObject();
 					if(!identified_source){
 						modify_nodes(msg.get_dest(), node, 1);
-						listening_for = msg.get_dest();
+						for(User usr : users){
+							if(usr.isMyName(msg.get_dest()))
+								usr.setFromPort(node.getPort());
+						}
 						identified_source = true;
 					}
 					//System.out.println("just read in a message from a listening thread");
@@ -338,11 +346,13 @@ public class MessagePasser {
 			} catch (IOException e) {
 				//THIS IS WHAT HAPPENS WHEN A USER DISCONNECTS
 				InetAddress connectedIP = node.getInetAddress();
+				int fromPort = node.getPort();
 				String connectedUser;
 				for(User currentUser : users){
-					if(!currentUser.getUser(connectedIP).equals("")){
-						connectedUser = currentUser.getUser(connectedIP);
-						//System.out.println("Disconnected from user: " + connectedUser); //find the user
+					if(!currentUser.getUser(connectedIP, fromPort).equals("")){
+						connectedUser = currentUser.getUser(connectedIP, fromPort);
+						//System.out.println("matched user: " + currentUser);
+						System.out.println("Disconnected from user: " + connectedUser); //find the user
 						//make sure that this user's connection Socket is removed from the global Map<String, Socket> nodes
 						modify_nodes(connectedUser, null, 2);
 						break;
@@ -388,7 +398,7 @@ public class MessagePasser {
 						//if connection successful, add this connection to the global nodes list
 						modify_nodes(msg.get_dest(), sendSocket, 1);
 						//now spin off a thread to listen on this socket
-						Thread newListener = new Thread(new ReceiveIncomingConnections(sendSocket));
+						Thread newListener = new Thread(new ReceiveIncomingConnections(sendSocket, true));
 						newListener.start();
 						//now actually send the data
 						sendData(msg, sendSocket);
