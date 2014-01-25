@@ -241,14 +241,15 @@ public class MessagePasser {
 					 * find corresponding name
 					 * store connection into "nodes" Map object
 					 * */
-					InetAddress connectedIP = aNode.getInetAddress();
+					/*InetAddress connectedIP = aNode.getInetAddress();
 					for(User currentUser : users){
 						if(!currentUser.getUser(connectedIP).equals("")){
 							modify_nodes(currentUser.getUser(connectedIP), aNode, 1);
 							threadPool.submit(new ReceiveIncomingConnections(aNode));
 							break;
 						}
-					}
+					}*/
+					threadPool.submit(new ReceiveIncomingConnections(aNode));
 					
 				}
 			} catch (NumberFormatException e) {
@@ -271,6 +272,8 @@ public class MessagePasser {
 	//This is a thread that will receive the data from an incoming connection and fill up incoming_buffer
 	private static class ReceiveIncomingConnections implements Runnable{
 		Socket node;
+		Boolean identified_source = false;
+		String listening_for = "";
 		public ReceiveIncomingConnections(Socket node){
 			this.node = node;
 		}
@@ -288,6 +291,11 @@ public class MessagePasser {
 					//This is a blocking call that should only move on once we read in a full Message object
 					//System.out.println("waiting to read in a message from a listening thread");
 					Message msg = (Message) ois.readObject();
+					if(!identified_source){
+						modify_nodes(msg.get_dest(), node, 1);
+						listening_for = msg.get_dest();
+						identified_source = true;
+					}
 					//System.out.println("just read in a message from a listening thread");
 					//Check against receiveRules
 					Rule currentRule = receiveRules.get(0);
