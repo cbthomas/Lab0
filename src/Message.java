@@ -12,8 +12,8 @@ public class Message implements Serializable{
 	private String src, dest, kind;
 	private int seqNum;
 	private Boolean duplicate, delayed;
-	private Object data;
-	public Message(String dest, String kind, Object data){
+	private Serializable data;
+	public Message(String dest, String kind, Serializable data){
 		this.dest = dest;
 		this.kind = kind;
 		this.data = data;
@@ -52,7 +52,7 @@ public class Message implements Serializable{
 	public Boolean get_dupe(){
 		return duplicate;
 	}
-	public Object get_data(){
+	public Serializable get_data(){
 		return data;
 	}
 	public String toString(){
