@@ -7,5 +7,6 @@ public abstract class ClockService {
 
 	public abstract void setMyTime(TimeStamp myTime);
 	
+	public abstract void incrementTime();
 	
 }

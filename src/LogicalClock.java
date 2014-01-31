@@ -16,6 +16,9 @@ public class LogicalClock extends ClockService {
 		super.MyTime = myTime;
 	}
 
-	
+	@Override
+	public void incrementTime(){
+		super.MyTime.incrementTime();
+	}
 	
 }

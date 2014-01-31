@@ -1,5 +1,7 @@
+import java.io.Serializable;
 
-public class TimeStamp {
+
+public class TimeStamp implements Serializable{
 
 	private String procName;
 	private int time;
@@ -21,7 +23,9 @@ public class TimeStamp {
 	public void setTime(int time) {
 		this.time = time;
 	}
-
+	public void incrementTime(){
+		time++;
+	}
 	public Boolean isEqual(TimeStamp ts){
 
 		if(this.time == ts.time)
@@ -46,6 +50,8 @@ public class TimeStamp {
 		else
 			return false;
 	}
-
+	public String toString(){
+		return time+ " ";
+	}
 
 }

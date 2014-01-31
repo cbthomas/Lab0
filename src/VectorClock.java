@@ -21,6 +21,11 @@ public class VectorClock extends ClockService {
 		super.MyTime = myTime;
 		vector_clock.put(super.MyTime.getProcName(),myTime);
 	}
+	
+	public void setMyTime(String procName, int time){
+		super.MyTime.setTime(time);
+		vector_clock.put(procName,new TimeStamp(procName,time));
+	}
 
 
 	public TimeStamp getTimeStamp(String procName){
@@ -29,6 +34,16 @@ public class VectorClock extends ClockService {
 
 	public void setTimeStamp(String procName, int time){
 		vector_clock.put(procName,new TimeStamp(procName,time));
+	}
+	
+	public HashMap<String,TimeStamp> getVectorClock(){
+		return vector_clock;
+	}
+	
+	@Override
+	public void incrementTime(){
+		super.MyTime.incrementTime();
+		vector_clock.put(super.MyTime.getProcName(),super.MyTime);
 	}
 
 }
