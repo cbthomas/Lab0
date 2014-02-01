@@ -25,7 +25,7 @@ import org.yaml.snakeyaml.Yaml;
 
 
 public class MessagePasser {
-	private static Queue<TimeStampedMessage> incoming_buffer; //buffer of what is coming into this instance of MP
+	private static LinkedList<TimeStampedMessage> incoming_buffer; //buffer of what is coming into this instance of MP
 	private LinkedList<TimeStampedMessage> outgoing_buffer; //buffer of what this instance of MP is sending out
 	private Yaml yaml; //This will parse the configuration_filename
 	private long last_modified; //last modified time for the configuration_filename.yaml
@@ -90,7 +90,8 @@ public class MessagePasser {
 					User currentUser = new User((String)connection_info.get("name"),InetAddress.getByName((String)connection_info.get("ip")), (Integer)connection_info.get("port"));
 					users.add(currentUser);
 					if(clockType.equals("vector")){
-						((VectorClock)clock).setTimeStamp(currentUser.getName(), 0);
+						if(!currentUser.getName().equals("logger")) //Don't add "logger" to our vector clock!
+							((VectorClock)clock).setTimeStamp(currentUser.getName(), 0);
 					}
 				}
 				//System.out.println(connection_info);
@@ -182,7 +183,7 @@ public class MessagePasser {
 		clock.incrementTime();
 		if(clockType.equals("vector")){
 			message.setTimeStamp(((VectorClock) clock).getVectorClock());
-			System.out.println("Vector Sending increment: " + clock.getMyTime().getProcName() + " and time: " + clock.getMyTime().getTime());
+			//System.out.println("Vector Sending increment: " + clock.getMyTime().getProcName() + " and time: " + clock.getMyTime().getTime());
 		}
 		else{
 			message.addTimeStamp(local_user.getName(), clock.getMyTime());
@@ -209,8 +210,15 @@ public class MessagePasser {
 				/*for(Message msg : outgoing_buffer){
 					msg.set_delayed(false);
 				}*/
+				if(message.getLogStatus()){
+					message.setTimeStamp(message.copyMsgTimeStamp());
+					TimeStampedMessage tsm = new TimeStampedMessage("logger", "log", message, false);
+					send(tsm);
+				}
+				
 			} else if(action.toLowerCase().equals("delay")){
 				//message.set_delayed(true);
+				message.setTimeStamp(message.copyMsgTimeStamp());
 				outgoing_buffer.add(message);
 				return;
 			} else if(action.toLowerCase().equals("duplicate")){
@@ -219,19 +227,20 @@ public class MessagePasser {
 					msg.set_delayed(false);
 				}*/
 				//add one copy of the message to our outgoing_buffer
-				outgoing_buffer.addFirst(message);
+				message.setTimeStamp(message.copyMsgTimeStamp());
+				outgoing_buffer.addFirst(message);				
 				//now add a copy of the message with duplicate set to true
-				TimeStampedMessage duped = new TimeStampedMessage(message.get_dest(), message.get_kind(), message.get_data());
+				TimeStampedMessage duped = new TimeStampedMessage(message.get_dest(), message.get_kind(), message.get_data(), message.getLogStatus());
 				duped.set_seqNum(local_user.getSeqNum());
 				duped.set_source(local_user.getName());
 				duped.set_duplicate(true);
 				//update our own clock and timestamp the message
 				clock.incrementTime();
 				if(clockType.equals("vector")){
-					message.setTimeStamp(((VectorClock) clock).getVectorClock());
+					duped.setTimeStamp(((VectorClock) clock).getVectorClock());
 				}
 				else{
-					message.addTimeStamp(local_user.getName(), clock.getMyTime());
+					duped.addTimeStamp(local_user.getName(), clock.getMyTime());
 				}
 				outgoing_buffer.addFirst(duped);
 			}
@@ -248,7 +257,7 @@ public class MessagePasser {
 		}
 		
 	}
-	Message receive(){
+	TimeStampedMessage receive(){
 		//first call a method to check for updates on rules
 		updateRules(config_filename);
 		//deliver a single message from the front of this input queue (if not marked as delayed)
@@ -354,18 +363,22 @@ public class MessagePasser {
 						}
 						else if(action.toLowerCase().equals("delay")){
 							msg.set_delayed(true);
+							msg.setTimeStamp(msg.copyMsgTimeStamp());
 							modify_incoming(msg, true, false, false);
 						}
 						else if(action.toLowerCase().equals("duplicate")){
 							//must change all current msgs in incoming_buffer to not be delayed anymore
 							//add the message to the incoming_buffer twice since we matched a duplicate rule
+							msg.setTimeStamp(msg.copyMsgTimeStamp());
 							modify_incoming(msg, true, false, false);
+							msg.setTimeStamp(msg.copyMsgTimeStamp());
 							modify_incoming(msg, true, true, false);
 						}
 					}
 					else{
 						//If we don't match any rules, just put the message on the incoming_buffer
 						//since we received something that wasn't delay, we make sure everything is changed from delay on the buffer
+						msg.setTimeStamp(msg.copyMsgTimeStamp());
 						modify_incoming(msg, true, true, false);
 						
 					}
@@ -430,6 +443,7 @@ public class MessagePasser {
 						newListener.start();
 						//now actually send the data
 						sendData(msg, sendSocket);
+						
 					} catch (IOException e) {
 						// Inform user that you cannot connect or send that message due to connection issues
 						System.out.println("Cannot connect to user " + msg.get_dest() + " at this time.  Please try again later.");
@@ -444,6 +458,14 @@ public class MessagePasser {
 				//System.out.println("Sending a message and already have a connection to " + msg.get_dest());
 				//We already have an open connection to the message's destination, so just send the data
 				sendData(msg, sendSocket);
+			}
+			//This means that we also want to log the message we just sent
+			//    So, change the destination to logger, flip the logging flag, and add back to the buffer
+			//    Do this at the very end of the while loop
+			if(msg.getLogStatus()){
+				msg.setTimeStamp(msg.copyMsgTimeStamp());
+				TimeStampedMessage tsm = new TimeStampedMessage("logger", "log", msg, false);
+				send(tsm);
 			}
 		}
 	}
@@ -462,7 +484,7 @@ public class MessagePasser {
 	}
 	private static synchronized TimeStampedMessage modify_incoming(TimeStampedMessage msg, Boolean add, Boolean changeDelay, Boolean receive){
 		if(add)
-			incoming_buffer.add(msg);
+			incoming_buffer.addFirst(msg);
 		if(changeDelay){
 			for(Message currMessage : incoming_buffer){
 				currMessage.set_delayed(false);
@@ -480,16 +502,13 @@ public class MessagePasser {
 							}
 						}
 						if(msg.getTimeStamp().get(msg.get_source()).isGreater(clock.getMyTime())){
-							System.out.println("Msg timestamp: " + msg.getTimeStamp().get(msg.get_source()).getTime() + "is greater than receiver's timestamp: " + clock.MyTime.getTime());
+							//System.out.println("Msg timestamp: " + msg.getTimeStamp().get(msg.get_source()).getTime() + "is greater than receiver's timestamp: " + clock.MyTime.getTime());
 							
 							//this means that the source's timestamp is larger than ours
 							//so set our timestamp to their's + 1
-							//msg.getTimeStamp().get(msg.get_source()).incrementTime();
-							//((VectorClock)clock).setMyTime(msg.getTimeStamp().get(msg.get_source()));
 							int newTime = msg.getTimeStamp().get(msg.get_source()).getTime()+1;
 							((VectorClock)clock).setMyTime(msg.get_dest(), newTime);
-							System.out.println("Updated time should be: " + newTime);
-							System.out.println(msg.get_dest() + "'s new timestamp: " + clock.MyTime.getTime());
+							//System.out.println(msg.get_dest() + "'s new timestamp: " + clock.MyTime.getTime());
 						}
 						else
 							clock.incrementTime();

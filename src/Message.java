@@ -29,6 +29,9 @@ public class Message implements Serializable{
 	public void set_duplicate(Boolean dupe){
 		duplicate = dupe;
 	}
+	public void set_dest(String dest){
+		this.dest = dest;
+	}
 	//This might be set by receiver thread after checking the Message against receiveRules
 	public void set_delayed(Boolean delay){
 		delayed = delay;

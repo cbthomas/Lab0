@@ -3,10 +3,10 @@ import java.util.HashMap;
 
 public class VectorClock extends ClockService {
 
-	HashMap<String,TimeStamp> vector_clock = new HashMap<String,TimeStamp>();
+	HashMap<String,TimeStamp> vector_clock;
 
 	VectorClock(){
-
+		 vector_clock = new HashMap<String,TimeStamp>();
 	}
 
 	@Override
