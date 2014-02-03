@@ -1,7 +1,7 @@
 /*
- * Created by: Cody Thomas, Hao Gao
- * Created on: January 24, 2014
- * Created for: Carnegie Mellon University, Distributed Systems, Lab0*/
+ * Created by: Cody Thomas, Rachita Jain
+ * Created on: February 3, 2014
+ * Created for: Carnegie Mellon University, Distributed Systems, Lab1*/
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -217,9 +217,15 @@ public class MessagePasser {
 				}
 				
 			} else if(action.toLowerCase().equals("delay")){
+				if(message.getLogStatus()){
+					message.setTimeStamp(message.copyMsgTimeStamp());
+					TimeStampedMessage tsm = new TimeStampedMessage("logger", "log", message, false);
+					send(tsm);	
+					message.setLogStatus(false);
+				}
 				//message.set_delayed(true);
 				message.setTimeStamp(message.copyMsgTimeStamp());
-				outgoing_buffer.add(message);
+				outgoing_buffer.add(message);				
 				return;
 			} else if(action.toLowerCase().equals("duplicate")){
 				//Mark all delayed messages as no longer delayed
@@ -484,7 +490,7 @@ public class MessagePasser {
 	}
 	private static synchronized TimeStampedMessage modify_incoming(TimeStampedMessage msg, Boolean add, Boolean changeDelay, Boolean receive){
 		if(add)
-			incoming_buffer.addFirst(msg);
+			incoming_buffer.add(msg);
 		if(changeDelay){
 			for(Message currMessage : incoming_buffer){
 				currMessage.set_delayed(false);

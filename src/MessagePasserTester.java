@@ -1,7 +1,7 @@
 /*
- * Created by: Cody Thomas, Hao Gao
- * Created on: January 24, 2014
- * Created for: Carnegie Mellon University, Distributed Systems, Lab0*/
+ * Created by: Cody Thomas, Rachita Jain
+ * Created on: February 3, 2014
+ * Created for: Carnegie Mellon University, Distributed Systems, Lab1*/
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -135,7 +135,7 @@ public class MessagePasserTester {
 			System.out.println("I don't understand your input. Please try again.");
 		}
 		
-		//MessagePasser MP = new MessagePasser("/Users/Cody/Documents/DistributedSystems/Lab0/config_file.yaml", "alice");
+		//MessagePasser MP = new MessagePasser("//Users/Cody/Dropbox/DS/Lab0/config_file.yaml", "alice");
 	}
 	public static ClockService getClock(){
 		return ourClock;
@@ -164,7 +164,7 @@ public class MessagePasserTester {
 				if(selection.equals("1")){
 					//Pull everything out of the incoming buffer so we can analyze it
 					while( (msg = MP.receive()) != null ){
-						logs.add(0, msg);
+						logs.add(msg);
 					}
 					displaySortedLogs(logs);
 				}
@@ -200,7 +200,7 @@ public class MessagePasserTester {
 					System.out.println(logs.get(j).get_source() + " logged the following: " + nextMsg.printForLogging());
 					System.out.println("->");
 					System.out.println(logs.get(i).get_source() + " logged the following: " + currMsg.printForLogging());
-					System.out.println("\n");
+					System.out.println("");
 				}
 				else if(isLesser(currTS, nextTS)){
 					//currMsg -> nextMsg

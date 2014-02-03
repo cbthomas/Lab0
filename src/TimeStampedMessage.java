@@ -1,12 +1,13 @@
+/*
+ * Created by: Cody Thomas, Rachita Jain
+ * Created on: February 3, 2014
+ * Created for: Carnegie Mellon University, Distributed Systems, Lab1*/
 import java.io.Serializable;
 import java.util.HashMap;
 
 
 public class TimeStampedMessage extends Message implements Serializable{
 
-	/**
-	 * 
-	 */
 	private static final long serialVersionUID = 1L;
 	
 	HashMap<String,TimeStamp> msg_timestamp;

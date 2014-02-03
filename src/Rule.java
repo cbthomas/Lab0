@@ -1,7 +1,7 @@
 /*
- * Created by: Cody Thomas, Hao Gao
- * Created on: January 24, 2014
- * Created for: Carnegie Mellon University, Distributed Systems, Lab0*/
+ * Created by: Cody Thomas, Rachita Jain
+ * Created on: February 3, 2014
+ * Created for: Carnegie Mellon University, Distributed Systems, Lab1*/
 public class Rule {
 	private String action, src, dest, kind;
 	private int seqNum;

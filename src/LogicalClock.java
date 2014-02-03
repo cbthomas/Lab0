@@ -1,4 +1,7 @@
-
+/*
+ * Created by: Cody Thomas, Rachita Jain
+ * Created on: February 3, 2014
+ * Created for: Carnegie Mellon University, Distributed Systems, Lab1*/
 public class LogicalClock extends ClockService {
 
 	public LogicalClock(TimeStamp myTime){
