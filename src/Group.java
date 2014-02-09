@@ -66,11 +66,12 @@ public class Group {
 		}
 		System.out.println("ackQueue: " + ackQueue);
 	}
-	public ArrayList<String> missingAck(TimeStampedMessage msg){
+	public ArrayList<String> missingAck(TimeStampedMessage msg, String myName){
 		ArrayList<String> missingAcks = new ArrayList<String>();
 		//add everybody initially and remove the names of the ones we have acks from
 		for(String name : members)
 			missingAcks.add(name);
+		missingAcks.remove(myName); //you aren't missing an ack from yourself
 		for(int i = 0; i < ackQueue.size(); i++){
 			if(msg.isACK(ackQueue.get(i))){
 				missingAcks.remove(ackQueue.get(i).get_source());
@@ -91,6 +92,12 @@ public class Group {
 		holdbackQueue.add(0, update);
 		Collections.sort(holdbackQueue); //shouldn't be necessary, but just in case
 		
+	}
+	public TimeStampedMessage peekAtHBQ(){
+		if(holdbackQueue.size() > 0)
+			return holdbackQueue.get(0);
+		else
+			return null;
 	}
 	public void addToHoldbackQueue(TimeStampedMessage msg){
 		msg.set_delayed(true); //tells us that we don't have all the necessary ACKs for this message yet
