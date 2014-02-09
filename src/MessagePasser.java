@@ -217,8 +217,9 @@ public class MessagePasser {
 		message.setTimeStamp(message.copyMsgTimeStamp());
 
 		//First check the message against any SendRules before delivering the message to the socket
-		applySendRules(message);
-		//By getting to this point, we want to send all messages that are in the outgoing_buffer
+		
+			applySendRules(message);
+			//By getting to this point, we want to send all messages that are in the outgoing_buffer
 		modify_outgoing();
 		//Now, all that's left on the outgoing_buffer are messages that we couldn't send due to connection issues
 		//We need to mark them as no longer delayed so that we can try sending them the next time we call send
@@ -228,7 +229,7 @@ public class MessagePasser {
 		}
 		
 	}
-	private static void applySendRules(TimeStampedMessage message){
+	private static synchronized void applySendRules(TimeStampedMessage message){
 		updateRules(config_filename);
 		String action = "";
 		if(sendRules.size() > 0){
@@ -255,7 +256,8 @@ public class MessagePasser {
 			} else if(action.toLowerCase().equals("delay")){
 				message.set_delayed(true);
 				message.setTimeStamp(message.copyMsgTimeStamp());
-				outgoing_buffer.add(message);				
+				outgoing_buffer.addFirst(message);			
+				System.out.println("just hit a delay rule, adding to the outgoin and returning: " + message);
 				return;
 			} else if(action.toLowerCase().equals("duplicate")){
 				//Mark all delayed messages as no longer delayed
@@ -264,21 +266,28 @@ public class MessagePasser {
 				}*/
 				//add one copy of the message to our outgoing_buffer
 				message.setTimeStamp(message.copyMsgTimeStamp());
+				message.set_delayed(false);
 				outgoing_buffer.addFirst(message);				
 				//now add a copy of the message with duplicate set to true
 				TimeStampedMessage duped = new TimeStampedMessage(message.get_dest(), message.get_kind(), message.get_data(), message.getLogStatus());
 				duped.set_seqNum(local_user.getSeqNum());
 				duped.set_source(local_user.getName());
 				duped.set_duplicate(true);
+				duped.set_delayed(false);
 				outgoing_buffer.addFirst(duped);
 			}
 		}
 		else
 			outgoing_buffer.addFirst(message); //message did not match any sendRules, so just send it normally
+		
 		//We need to mark them as no longer delayed so that we can try sending them the next time we call send
-		for(Message msg : outgoing_buffer){
+		for(TimeStampedMessage msg : outgoing_buffer){
 			msg.set_delayed(false);
 			//System.out.println("Still on outgoing buffer: " + msg);
+		}
+		System.out.println("Just finished send rules for non delay msg: new buffer: ");
+		for(TimeStampedMessage msg : outgoing_buffer){
+			System.out.println(msg + " delay=" + msg.get_delayed());
 		}
 	}
 	TimeStampedMessage receive(){
@@ -432,6 +441,7 @@ public class MessagePasser {
 			if(messageGroup != null){
 				//Create an exact copy of this message that we're goina send out to all members of the group
 				for(String currName : groups.get(msg.get_dest()).traverseGroup()){
+					System.out.println("About to add group message for " + currName + " through applySendRules");
 					if(currName.equals(local_user.getName())){
 						//we don't want to be sending our ACK to ourself, otherwise if it's a message we are creating, we make note
 						if(!msg.get_kind().equals("ACK")){
@@ -441,7 +451,7 @@ public class MessagePasser {
 							nextMsg.setGroup(msg.get_dest());
 							nextMsg.setTimeStamp(msg.copyMsgTimeStamp());
 							messageGroup.addToHoldbackQueue(nextMsg); //src and dest are me, that's how i know i created it
-							messageGroup.addToMySentList(nextMsg);; //add it in order to the list of messages I sent, may not be used...
+							messageGroup.addToMySentList(nextMsg); //add it in order to the list of messages I sent, may not be used...
 						}
 					}
 					else{
@@ -463,7 +473,6 @@ public class MessagePasser {
 					return;
 			}
 			sendSocket = modify_nodes(msg.get_dest(), null, 3);
-			System.out.println("sending msg: " + msg);
 			if(sendSocket == null){
 				User foundUser = null;
 				//find the user that we're trying to send to and get their IP/port
@@ -546,15 +555,19 @@ public class MessagePasser {
 		if(msg.getGroup() != null && !msg.getGroup().equals("")){
 			Group currGroup = groups.get(msg.getGroup());
 			if(msg.get_kind().equals("ACK")){
-				System.out.println(msg.get_dest() + " just got an ACK from " + msg.get_source());
+				System.out.println(msg.get_dest() + " just got an ACK from " + msg.get_source() + ": " + msg);
 				//we first want to check to make sure this isn't an ACK for something we already delivered to the global HBQ
 				for(TimeStampedMessage inQueueMsg : holdbackQueue){
-					if(inQueueMsg.isACK(msg))
+					if(inQueueMsg.isACK(msg)){
+						System.out.println("just got an ack for something in global HBQ");
 						return true;
+					}
+						
 				}
 				//this could be a message we delivered already too, so check that
-				if(currGroup.delivered(msg))
+				if(currGroup.alreadyACKed(msg)){
 					return true;
+				}
 				currGroup.addToAckQueue(msg); //add to the queue that we got an ACK
 				if(currGroup.allAcks(msg)){
 					//This means the message we just got was the last ACK we needed
@@ -576,8 +589,8 @@ public class MessagePasser {
 				nackMsg.setTimeStamp(tempMsg.copyMsgTimeStamp());
 				//nackMsg.set_dest(msg.get_source());
 				nackMsg.set_source(local_user.getName());
-				applySendRules(nackMsg);
-				//outgoing_buffer.addFirst(nackMsg);
+				//applySendRules(nackMsg);
+				outgoing_buffer.addFirst(nackMsg);
 				modify_outgoing(); //send the message back to the user that requested it
 			}
 			else if(msg.get_kind().contains("RACK-")){
@@ -829,7 +842,7 @@ public class MessagePasser {
 			//This thread runs forever in an infinite loop waiting 2 seconds each time
 			try {
 				while(true){
-					Thread.sleep(10000); //10 seconds
+					Thread.sleep(20000); //10 seconds
 					for(String groupName : groups.keySet()){
 						Group currGroup = groups.get(groupName);
 						if(currGroup.isMemberOfGroup(local_user.getName())){
@@ -837,28 +850,31 @@ public class MessagePasser {
 							TimeStampedMessage nextMsg = currGroup.peekAtHBQ();
 							if(nextMsg != null){
 								ArrayList<String> RACKusers = currGroup.missingAck(nextMsg, local_user.getName());
-								for(String dest : RACKusers){
-									TimeStampedMessage resend;
-									if(nextMsg.get_source().equals(local_user.getName())){
-										//I'm still waiting for ACKs from a message I created, so just send the message again
-										resend = new TimeStampedMessage(dest, nextMsg.get_kind(), nextMsg.get_data(), false);
+								if(RACKusers.size()>0){
+									for(String dest : RACKusers){
+										TimeStampedMessage resend;
+										if(nextMsg.get_source().equals(local_user.getName())){
+											//I'm still waiting for ACKs from a message I created, so just send the message again
+											resend = new TimeStampedMessage(dest, nextMsg.get_kind(), nextMsg.get_data(), false);
+										}
+										else{
+											//I'm still waiting for ACKs from other users, so RACK them
+											resend = new TimeStampedMessage(dest, "RACK-" + nextMsg.get_source(), nextMsg.get_data(), false);	
+										}
+										resend.set_source(local_user.getName());
+										resend.set_seqNum(nextMsg.get_seqNum());
+										resend.setTimeStamp(nextMsg.copyMsgTimeStamp());
+										resend.setGroup(nextMsg.getGroup());
+										resend.set_delayed(false);
+										System.out.println("Liveness: resending to " + dest + " " + resend);
+										//applySendRules(resend);
+										outgoing_buffer.addFirst(resend);
 									}
-									else{
-										//I'm still waiting for ACKs from other users, so RACK them
-										resend = new TimeStampedMessage(dest, "RACK-" + nextMsg.get_source(), nextMsg.get_data(), false);	
-									}
-									resend.set_source(local_user.getName());
-									resend.set_seqNum(nextMsg.get_seqNum());
-									resend.setTimeStamp(nextMsg.copyMsgTimeStamp());
-									resend.setGroup(nextMsg.getGroup());
-									resend.set_delayed(false);
-									System.out.println("Liveness: resending to " + dest + " " + resend);
-									applySendRules(resend);
-									//outgoing_buffer.addFirst(resend);
+									
 								}
-								modify_outgoing();
 							}
-						}					
+						}
+						modify_outgoing();
 					}
 				}
 				

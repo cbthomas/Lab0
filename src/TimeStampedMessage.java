@@ -106,7 +106,8 @@ public class TimeStampedMessage extends Message implements Serializable, Compara
 			return 1; //this means that this message is > secondMsg
 		return 0; //this means that this message is == secondMsg by way of || being assigned ==
 	}
-
+	
+	
 	@Override
 	public int hashCode() {
 		final int prime = 31;

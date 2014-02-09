@@ -36,6 +36,8 @@ public class User {
 		return port;
 	}
 	public Boolean isMyName(String name){
+		if(name == null)
+			return false;
 		return name.equals(this.name);
 	}
 	public String toString(){
