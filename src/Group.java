@@ -23,7 +23,9 @@ public class Group {
 		return mySentList.get(index-1);
 	}
 	public void addToMySentList(TimeStampedMessage msg){
+		msg.set_delayed(false);
 		mySentList.add(msg);
+		Collections.sort(mySentList);
 	}
 	public boolean delivered(TimeStampedMessage msg){
 		//if msg's timestamp is < the group timestamp, then it's already been delivered
@@ -103,13 +105,27 @@ public class Group {
 		msg.set_delayed(true); //tells us that we don't have all the necessary ACKs for this message yet
 		holdbackQueue.add(msg);
 		Collections.sort(holdbackQueue);
-		System.out.println("just added to group holdbackqueue: " + holdbackQueue);
 	}
-	public TimeStampedMessage getFromHoldbackQueue(){
+	public TimeStampedMessage getFromHoldbackQueue(TimeStampedMessage ackForMsg){
 		TimeStampedMessage removedMsg = null;
-		if(!holdbackQueue.isEmpty()){
-			if(holdbackQueue.get(0).get_delayed() == false)
-				removedMsg = holdbackQueue.remove(0);
+		for(TimeStampedMessage inQueue : holdbackQueue){
+			if(inQueue.getTimeStamp().hashCode() == ackForMsg.getTimeStamp().hashCode()){
+				if(inQueue.getGroup().equals(ackForMsg.getGroup())){
+					if(inQueue.get_seqNum() == ackForMsg.get_seqNum()){
+						if(inQueue.get_data().equals(ackForMsg.get_data())){
+							removedMsg = new TimeStampedMessage(inQueue.get_dest(), inQueue.get_kind(), inQueue.get_data(), false);
+							removedMsg.set_seqNum(inQueue.get_seqNum());
+							removedMsg.setGroup(inQueue.getGroup());
+							removedMsg.setTimeStamp(inQueue.copyMsgTimeStamp());
+							removedMsg.set_source(inQueue.get_source());
+
+							int index = holdbackQueue.indexOf(inQueue);
+							holdbackQueue.remove(index);
+							break;
+						}
+					}
+				}
+			}
 		}
 		System.out.println("just removed " + removedMsg + " from group HBQ");
 		System.out.println("still in removed, now it is: " + holdbackQueue);

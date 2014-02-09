@@ -253,7 +253,7 @@ public class MessagePasser {
 				}*/
 				
 			} else if(action.toLowerCase().equals("delay")){
-				//message.set_delayed(true);
+				message.set_delayed(true);
 				message.setTimeStamp(message.copyMsgTimeStamp());
 				outgoing_buffer.add(message);				
 				return;
@@ -275,6 +275,11 @@ public class MessagePasser {
 		}
 		else
 			outgoing_buffer.addFirst(message); //message did not match any sendRules, so just send it normally
+		//We need to mark them as no longer delayed so that we can try sending them the next time we call send
+		for(Message msg : outgoing_buffer){
+			msg.set_delayed(false);
+			//System.out.println("Still on outgoing buffer: " + msg);
+		}
 	}
 	TimeStampedMessage receive(){
 		//first call a method to check for updates on rules
@@ -338,7 +343,6 @@ public class MessagePasser {
 					//This is a blocking call that should only move on once we read in a full Message object
 					//System.out.println("waiting to read in a message from a listening thread");
 					TimeStampedMessage msg = (TimeStampedMessage) ois.readObject();	
-					System.out.println("just got a message: " + msg);
 					if(!identified_source){
 						modify_nodes(msg.get_dest(), node, 1);
 						for(User usr : users){
@@ -452,10 +456,14 @@ public class MessagePasser {
 					
 				}
 				//update msg with the one of the non-group named messages we just put on the buffer
-				msg = outgoing_buffer.poll();
+				//   of course, only get the next message if it isn't delayed
+				if (outgoing_buffer.peek() != null && outgoing_buffer.peek().get_delayed() == false)
+					msg = outgoing_buffer.poll();
+				else
+					return;
 			}
 			sendSocket = modify_nodes(msg.get_dest(), null, 3);
-			
+			System.out.println("sending msg: " + msg);
 			if(sendSocket == null){
 				User foundUser = null;
 				//find the user that we're trying to send to and get their IP/port
@@ -478,6 +486,9 @@ public class MessagePasser {
 						newListener.start();
 						//now actually send the data
 						sendData(msg, sendSocket);
+						for(Message notDelaymsg : outgoing_buffer){
+							notDelaymsg.set_delayed(false);
+						}
 						
 					} catch (IOException e) {
 						// Inform user that you cannot connect or send that message due to connection issues
@@ -493,6 +504,10 @@ public class MessagePasser {
 				//System.out.println("Sending a message and already have a connection to " + msg.get_dest());
 				//We already have an open connection to the message's destination, so just send the data
 				sendData(msg, sendSocket);
+				for(Message notDelaymsg : outgoing_buffer){
+					notDelaymsg.set_delayed(false);
+					//System.out.println("Still on outgoing buffer: " + msg);
+				}
 			}
 		}
 	}
@@ -532,11 +547,19 @@ public class MessagePasser {
 			Group currGroup = groups.get(msg.getGroup());
 			if(msg.get_kind().equals("ACK")){
 				System.out.println(msg.get_dest() + " just got an ACK from " + msg.get_source());
+				//we first want to check to make sure this isn't an ACK for something we already delivered to the global HBQ
+				for(TimeStampedMessage inQueueMsg : holdbackQueue){
+					if(inQueueMsg.isACK(msg))
+						return true;
+				}
+				//this could be a message we delivered already too, so check that
+				if(currGroup.delivered(msg))
+					return true;
 				currGroup.addToAckQueue(msg); //add to the queue that we got an ACK
 				if(currGroup.allAcks(msg)){
 					//This means the message we just got was the last ACK we needed
 					currGroup.removeFromAckQueue(msg);
-					TimeStampedMessage addToHBQ = currGroup.getFromHoldbackQueue();
+					TimeStampedMessage addToHBQ = currGroup.getFromHoldbackQueue(msg);
 					if(!addToHBQ.get_dest().equals(addToHBQ.get_source()))
 						holdbackQueue.add(addToHBQ); //don't add messages we created to the overall HBQ
 				}
@@ -569,7 +592,6 @@ public class MessagePasser {
 				checkMsg.set_seqNum(msg.get_seqNum());
 				
 				Boolean seenCheck = currGroup.delivered(checkMsg);
-				System.out.println("Group said " + seenCheck + " on seen previous message");
 				if(!seenCheck){
 					//we also need to check the global HBQ, just in case we removed it from the group, but haven't delivered it yet
 					for(TimeStampedMessage inQueueMsg : holdbackQueue){
@@ -632,7 +654,7 @@ public class MessagePasser {
 					if(currGroup.allAcks(msg)){
 						//This means the message we just got was the last ACK we needed
 						currGroup.removeFromAckQueue(msg);
-						TimeStampedMessage addToHBQ = currGroup.getFromHoldbackQueue();
+						TimeStampedMessage addToHBQ = currGroup.getFromHoldbackQueue(msg);
 						if(!addToHBQ.get_dest().equals(addToHBQ.get_source()))
 							holdbackQueue.add(addToHBQ); //don't add messages we created to the overall HBQ
 					}
@@ -813,7 +835,7 @@ public class MessagePasser {
 						if(currGroup.isMemberOfGroup(local_user.getName())){
 							//for each group that I am part of, check that group's holdback queue to see if we are waiting on any ACKs
 							TimeStampedMessage nextMsg = currGroup.peekAtHBQ();
-							if(nextMsg != null && nextMsg.get_delayed() == true){
+							if(nextMsg != null){
 								ArrayList<String> RACKusers = currGroup.missingAck(nextMsg, local_user.getName());
 								for(String dest : RACKusers){
 									TimeStampedMessage resend;
