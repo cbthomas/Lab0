@@ -14,10 +14,10 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
-import java.util.Queue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -26,13 +26,17 @@ import org.yaml.snakeyaml.Yaml;
 
 public class MessagePasser {
 	private static LinkedList<TimeStampedMessage> incoming_buffer; //buffer of what is coming into this instance of MP
-	private LinkedList<TimeStampedMessage> outgoing_buffer; //buffer of what this instance of MP is sending out
+	private static ArrayList<TimeStampedMessage> holdbackQueue; //buffer of what comes off of the group's HBQueues when they receive enough ACKs
+	private static LinkedList<TimeStampedMessage> outgoing_buffer; //buffer of what this instance of MP is sending out
+	//private static Set<TimeStampedMessage> receivedMsgSet; //holds all messages we've seen, to account for reliable delivery
+	//private static ArrayList<TimeStampedMessage> mySentMsgs; //holds all messages I created and sent
 	private Yaml yaml; //This will parse the configuration_filename
 	private long last_modified; //last modified time for the configuration_filename.yaml
 	private static String config_filename;
 	private Map<String, Object> config_parsing;
 	//maybe have Map<String, Socket> connections to be global map of all active connections
 	private static Map<String, Socket> nodes;
+	private static Map<String, Group> groups;
 	//a list of all possible user names, ip, ports that aren't necessarily connected 
 	private static ArrayList<User> users;
 	private static User local_user;
@@ -41,7 +45,7 @@ public class MessagePasser {
     private static ArrayList<Rule> sendRules;
     private static ArrayList<Rule> receiveRules;
     //Clock variables
-    private static ClockService clock;
+    private static VectorClock clock;
     private static String clockType;
     
 	public MessagePasser(String configuration_filename, String local_name){
@@ -51,6 +55,9 @@ public class MessagePasser {
 		//     (may need additional state? threads?)
 		incoming_buffer = new LinkedList<TimeStampedMessage>();
 		outgoing_buffer = new LinkedList<TimeStampedMessage>();
+		//receivedMsgSet = new HashSet<TimeStampedMessage>();
+		holdbackQueue = new ArrayList<TimeStampedMessage>();
+		//mySentMsgs = new ArrayList<TimeStampedMessage>();
 		
 		sendRules = new ArrayList<Rule>();
 		receiveRules = new ArrayList<Rule>();
@@ -58,7 +65,7 @@ public class MessagePasser {
 		yaml = new Yaml();
 		
 		//get a hold on the clock type
-		clock = MessagePasserTester.getClock();
+		clock = (VectorClock) MessagePasserTester.getClock();
 		clockType = MessagePasserTester.getClockType();
 		
 		try { 
@@ -71,6 +78,7 @@ public class MessagePasser {
 			config_filename = configuration_filename;
 			users = new ArrayList<User>();
 			nodes = new HashMap<String, Socket>();
+			groups = new HashMap<String, Group>();
 			
 			//for each key, get a list corresponding to each '-' under the header's name + :
 			//	  Just need to deal with the configuration list here though
@@ -95,6 +103,18 @@ public class MessagePasser {
 					}
 				}
 				//System.out.println(connection_info);
+			}
+			//update the groups
+			for(Object group_item : (ArrayList<Object>) config_parsing.get("groups")){
+				//each group_item is a mapping of group and a list of names
+				Map<String, Object> group_info = (Map<String, Object>) group_item;
+				Group currGroup = new Group((String)group_info.get("name"));
+				ArrayList<String> group_names = (ArrayList<String>)group_info.get("members");
+				for(String currName : group_names){
+					currGroup.addToGroup(currName);
+				}
+				currGroup.createGroupTS();
+				groups.put((String)group_info.get("name"), currGroup);
 			}
 			//System.out.println(users);
 			updateRules(configuration_filename);
@@ -179,17 +199,34 @@ public class MessagePasser {
 		message.set_seqNum(local_user.getSeqNum());
 		message.set_source(local_user.getName());
 		message.set_duplicate(false);
-		//update our own clock and timestamp the message
-		clock.incrementTime();
-		if(clockType.equals("vector")){
-			message.setTimeStamp(((VectorClock) clock).getVectorClock());
-			//System.out.println("Vector Sending increment: " + clock.getMyTime().getProcName() + " and time: " + clock.getMyTime().getTime());
+		//update our own clock and timestamp the message for the group we are sending the message to
+		Group currGroup = groups.get(message.get_dest());
+		if(currGroup == null){
+			//then this message is to a single user and not a group
+			clock.incrementTime();
+			message.setGroup("");
+			message.setTimeStamp(((VectorClock) clock).getVectorClock());			
 		}
 		else{
-			message.addTimeStamp(local_user.getName(), clock.getMyTime());
+			currGroup.incGroupTS(local_user.getName()); //increment the TS for me because i'm sending a message in this specific group
+			message.setTimeStamp(currGroup.getTS());
 		}
-		//System.out.println(message + "seqNum: " + message.get_seqNum());
+		message.setTimeStamp(message.copyMsgTimeStamp());
+
 		//First check the message against any SendRules before delivering the message to the socket
+		applySendRules(message);
+		//By getting to this point, we want to send all messages that are in the outgoing_buffer
+		modify_outgoing();
+		//Now, all that's left on the outgoing_buffer are messages that we couldn't send due to connection issues
+		//We need to mark them as no longer delayed so that we can try sending them the next time we call send
+		for(Message msg : outgoing_buffer){
+			msg.set_delayed(false);
+			//System.out.println("Still on outgoing buffer: " + msg);
+		}
+		
+	}
+	private static void applySendRules(TimeStampedMessage message){
+		String action = "";
 		if(sendRules.size() > 0){
 			Rule currentRule = sendRules.get(0);
 			for(int i = 0; i< sendRules.size(); i++){
@@ -210,19 +247,8 @@ public class MessagePasser {
 				/*for(Message msg : outgoing_buffer){
 					msg.set_delayed(false);
 				}*/
-				if(message.getLogStatus()){
-					message.setTimeStamp(message.copyMsgTimeStamp());
-					TimeStampedMessage tsm = new TimeStampedMessage("logger", "log", message, false);
-					send(tsm);
-				}
 				
 			} else if(action.toLowerCase().equals("delay")){
-				if(message.getLogStatus()){
-					message.setTimeStamp(message.copyMsgTimeStamp());
-					TimeStampedMessage tsm = new TimeStampedMessage("logger", "log", message, false);
-					send(tsm);	
-					message.setLogStatus(false);
-				}
 				//message.set_delayed(true);
 				message.setTimeStamp(message.copyMsgTimeStamp());
 				outgoing_buffer.add(message);				
@@ -240,28 +266,11 @@ public class MessagePasser {
 				duped.set_seqNum(local_user.getSeqNum());
 				duped.set_source(local_user.getName());
 				duped.set_duplicate(true);
-				//update our own clock and timestamp the message
-				clock.incrementTime();
-				if(clockType.equals("vector")){
-					duped.setTimeStamp(((VectorClock) clock).getVectorClock());
-				}
-				else{
-					duped.addTimeStamp(local_user.getName(), clock.getMyTime());
-				}
 				outgoing_buffer.addFirst(duped);
 			}
 		}
 		else
 			outgoing_buffer.addFirst(message); //message did not match any sendRules, so just send it normally
-		//By getting to this point, we want to send all messages that are in the outgoing_buffer
-		modify_outgoing();
-		//Now, all that's left on the outgoing_buffer are messages that we couldn't send due to connection issues
-		//We need to mark them as no longer delayed so that we can try sending them the next time we call send
-		for(Message msg : outgoing_buffer){
-			msg.set_delayed(false);
-			//System.out.println("Still on outgoing buffer: " + msg);
-		}
-		
 	}
 	TimeStampedMessage receive(){
 		//first call a method to check for updates on rules
@@ -279,20 +288,6 @@ public class MessagePasser {
 				while(true){
 					//wait for a connection and put it into aNode
 					Socket aNode = local_socket.accept();
-					/*
-					 * get remote IP
-					 * find corresponding name
-					 * store connection into "nodes" Map object
-					 * */
-					/*InetAddress connectedIP = aNode.getInetAddress();
-					int fromPort = aNode.getPort();
-					for(User currentUser : users){
-						if(!currentUser.getUser(connectedIP).equals("")){
-							modify_nodes(currentUser.getUser(connectedIP, fromPort), aNode, 1);
-							threadPool.submit(new ReceiveIncomingConnections(aNode));
-							break;
-						}
-					}*/
 					threadPool.submit(new ReceiveIncomingConnections(aNode, false));
 					
 				}
@@ -347,7 +342,6 @@ public class MessagePasser {
 						}
 						identified_source = true;
 					}
-					//System.out.println("just read in a message from a listening thread");
 					//Check against receiveRules
 					Rule currentRule = receiveRules.get(0);
 					String action = "";
@@ -355,10 +349,8 @@ public class MessagePasser {
 						currentRule = receiveRules.get(i);
 						if(currentRule.match(msg)){
 							action = currentRule.getAction();
-							//System.out.println("Matched receiveRule! " + currentRule.toString());
 							break;
 						}
-						//currentRule = receiveRules.get(i);
 					}
 					//At this point action is either the action to be performed, or "" if we didn't match any rules
 					if(!action.equals("")){
@@ -413,7 +405,7 @@ public class MessagePasser {
 			//System.out.println("Something connected!");
 		}
 	}
-	private void modify_outgoing(){
+	private static void modify_outgoing(){
 		/*
 		 * For each message in outgoing_buffer
 		 * 	   check if there is a connection already open for that message
@@ -423,8 +415,40 @@ public class MessagePasser {
 		 */
 		Socket sendSocket;
 		TimeStampedMessage msg;
+		Group messageGroup;
 		while( outgoing_buffer.peek() != null && outgoing_buffer.peek().get_delayed() == false){
 			msg = outgoing_buffer.poll();
+			//check and see if the dst of msg is a group name, if it is, add n messages to front of outgoing_buffer
+			messageGroup = groups.get(msg.get_dest());
+			if(messageGroup != null){
+				//Create an exact copy of this message that we're goina send out to all members of the group
+				for(String currName : groups.get(msg.get_dest()).traverseGroup()){
+					if(currName.equals(local_user.getName())){
+						//we don't want to be sending our ACK to ourself, otherwise if it's a message we are creating, we make note
+						if(!msg.get_kind().equals("ACK")){
+							TimeStampedMessage nextMsg = new TimeStampedMessage(currName, msg.get_kind(), msg.get_data(), false);
+							nextMsg.set_seqNum(msg.get_seqNum());
+							nextMsg.set_source(msg.get_source());
+							nextMsg.setGroup(msg.get_dest());
+							nextMsg.setTimeStamp(msg.copyMsgTimeStamp());
+							messageGroup.addToHoldbackQueue(nextMsg); //src and dest are me, that's how i know i created it
+							messageGroup.addToMySentList(nextMsg);; //add it in order to the list of messages I sent, may not be used...
+						}
+					}
+					else{
+						TimeStampedMessage nextMsg = new TimeStampedMessage(currName, msg.get_kind(), msg.get_data(), false);
+						nextMsg.set_seqNum(msg.get_seqNum());
+						nextMsg.set_source(msg.get_source());
+						nextMsg.setGroup(msg.get_dest());
+						nextMsg.setTimeStamp(msg.copyMsgTimeStamp());
+						//need to apply rules to each message first before just sticking them on the outgoing_buffer
+						applySendRules(nextMsg); //this method will put the messages on the outgoing_buffer
+					}
+					
+				}
+				//update msg with the one of the non-group named messages we just put on the buffer
+				msg = outgoing_buffer.poll();
+			}
 			sendSocket = modify_nodes(msg.get_dest(), null, 3);
 			
 			if(sendSocket == null){
@@ -465,17 +489,9 @@ public class MessagePasser {
 				//We already have an open connection to the message's destination, so just send the data
 				sendData(msg, sendSocket);
 			}
-			//This means that we also want to log the message we just sent
-			//    So, change the destination to logger, flip the logging flag, and add back to the buffer
-			//    Do this at the very end of the while loop
-			if(msg.getLogStatus()){
-				msg.setTimeStamp(msg.copyMsgTimeStamp());
-				TimeStampedMessage tsm = new TimeStampedMessage("logger", "log", msg, false);
-				send(tsm);
-			}
 		}
 	}
-	private void sendData(TimeStampedMessage msg, Socket sendSocket){
+	private static void sendData(TimeStampedMessage msg, Socket sendSocket){
 		try {
 			ObjectOutputStream oos = new ObjectOutputStream(sendSocket.getOutputStream());
 			oos.writeObject(msg);
@@ -489,52 +505,72 @@ public class MessagePasser {
 		}
 	}
 	private static synchronized TimeStampedMessage modify_incoming(TimeStampedMessage msg, Boolean add, Boolean changeDelay, Boolean receive){
-		if(add)
-			incoming_buffer.add(msg);
 		if(changeDelay){
 			for(Message currMessage : incoming_buffer){
 				currMessage.set_delayed(false);
 			}
 		}
+		if( msg != null && multiCastReceiveCheck(msg) )
+			return null; //this means we handled the message already, no need to put it on the incoming_buffer
+						//    i.e. the message was a NACK, ACK, or RACK that was just related to multicast, not to other messages
+		if(add)
+			incoming_buffer.add(msg);	
 		if(receive){
-			if(incoming_buffer.peek() != null){
-				if(incoming_buffer.peek().get_delayed() == false){
-					msg =  incoming_buffer.poll();
-					if(clockType.equals("vector")){ //This is the vector clock
-						HashMap<String, TimeStamp> src_timestamp = msg.getTimeStamp();
-						for(String name : src_timestamp.keySet()){
-							if( src_timestamp.get(name).isGreater( ((VectorClock)clock).getTimeStamp(name))){
-								((VectorClock)clock).setTimeStamp(name, src_timestamp.get(name).getTime());
-							}
-						}
-						if(msg.getTimeStamp().get(msg.get_source()).isGreater(clock.getMyTime())){
-							//System.out.println("Msg timestamp: " + msg.getTimeStamp().get(msg.get_source()).getTime() + "is greater than receiver's timestamp: " + clock.MyTime.getTime());
-							
-							//this means that the source's timestamp is larger than ours
-							//so set our timestamp to their's + 1
-							int newTime = msg.getTimeStamp().get(msg.get_source()).getTime()+1;
-							((VectorClock)clock).setMyTime(msg.get_dest(), newTime);
-							//System.out.println(msg.get_dest() + "'s new timestamp: " + clock.MyTime.getTime());
-						}
-						else
-							clock.incrementTime();
-					}
-					else{ //This is the logical clock
-						TimeStamp src_timestamp = msg.getTimeStamp().get(msg.get_source());
-						//if the sender's clock is larger, our time must be that + 1
-						if(src_timestamp.isGreater(clock.getMyTime()) ){
-							clock.MyTime.setTime(src_timestamp.getTime() + 1);
-						}
-						else
-							clock.incrementTime();
-					}
-					
-					return msg;
+			return orderedMulticastReceive();
+		}
+		return null;
+	}
+	private static synchronized boolean multiCastReceiveCheck(TimeStampedMessage msg){
+		//This is where we will handle NACK, ACK, RACK-creator messages without putting them on the incoming_buffer
+		//we return true if the message is one of the ones we will handle. If it is a normal message, return false
+		if(msg.getGroup() != null && !msg.getGroup().equals("")){
+			System.out.println("group receive: " + msg.getGroup());
+			Group currGroup = groups.get(msg.getGroup());
+			if(msg.get_kind().equals("ACK")){
+				System.out.println(msg.get_dest() + " just got an ACK from " + msg.get_source());
+				currGroup.addToAckQueue(msg); //add to the queue that we got an ACK
+				if(currGroup.allAcks(msg)){
+					//This means the message we just got was the last ACK we needed
+					currGroup.removeFromAckQueue(msg);
+					TimeStampedMessage addToHBQ = currGroup.getFromHoldbackQueue();
+					if(!addToHBQ.get_dest().equals(addToHBQ.get_source()))
+						holdbackQueue.add(addToHBQ); //don't add messages we created to the overall HBQ
 				}
 			}
+			else if(msg.get_kind().equals("NACK")){
+				
+			}
+			else if(msg.get_kind().contains("RACK-")){
+				
+			}
+			else{
+				//this was a normal message,just broadcasted. So we have to broadcast ACKs to everybody in the group
+				TimeStampedMessage rDeliverMsg = new TimeStampedMessage(msg.getGroup(), "ACK", msg.get_data(), false);
+				rDeliverMsg.set_seqNum(msg.get_seqNum());
+				rDeliverMsg.set_source(local_user.getName());
+				rDeliverMsg.setGroup(msg.getGroup());
+				rDeliverMsg.setTimeStamp(msg.copyMsgTimeStamp());
+				outgoing_buffer.addFirst(rDeliverMsg);
+				System.out.println("Just got a normal group message. Sending ACKs");
+				modify_outgoing(); //actually send the messages. This will go through and split them up into msg/user instead of /group
+				msg.set_delayed(true); //we haven't received an ACK from everybody for this, so delayed is true for now
+				currGroup.addToHoldbackQueue(msg);
+				//getting the message in the first place is an implicate ACK that the sender also go the message, so add an ACK to the group ACKqueue
+				rDeliverMsg.set_source(msg.get_source());
+				System.out.println(msg.get_dest() + " just got an implicit ACK from " + msg.get_source());
+				currGroup.addToAckQueue(rDeliverMsg);
+				if(currGroup.allAcks(msg)){
+					//This means the message we just got was the last ACK we needed
+					currGroup.removeFromAckQueue(msg);
+					TimeStampedMessage addToHBQ = currGroup.getFromHoldbackQueue();
+					if(!addToHBQ.get_dest().equals(addToHBQ.get_source()))
+						holdbackQueue.add(addToHBQ); //don't add messages we created to the overall HBQ
+				}
+			}
+			return true;
 		}
-		//System.out.println(incoming_buffer.size() + " Message(s) now on incoming_buffer");
-		return null;
+		return false;
+		
 	}
 	private static synchronized Socket modify_nodes(String name, Socket sock, int action){
 		//Add or remove a user from the global Map of nodes (active connections)
@@ -561,5 +597,127 @@ public class MessagePasser {
 			System.out.println(nodes);
 		}
 		return null;
+	}
+	private static void lab1receive(TimeStampedMessage msg){
+		if(clockType.equals("vector")){ //This is the vector clock
+			HashMap<String, TimeStamp> src_timestamp = msg.getTimeStamp();
+			for(String name : src_timestamp.keySet()){
+				if( src_timestamp.get(name).isGreater( ((VectorClock)clock).getTimeStamp(name))){
+					((VectorClock)clock).setTimeStamp(name, src_timestamp.get(name).getTime());
+				}
+			}
+			if(msg.getTimeStamp().get(msg.get_source()).isGreater(clock.getMyTime())){
+				//System.out.println("Msg timestamp: " + msg.getTimeStamp().get(msg.get_source()).getTime() + "is greater than receiver's timestamp: " + clock.MyTime.getTime());
+				
+				//this means that the source's timestamp is larger than ours
+				//so set our timestamp to their's + 1
+				int newTime = msg.getTimeStamp().get(msg.get_source()).getTime()+1;
+				((VectorClock)clock).setMyTime(msg.get_dest(), newTime);
+				//System.out.println(msg.get_dest() + "'s new timestamp: " + clock.MyTime.getTime());
+			}
+			else
+				clock.incrementTime();
+		}
+		else{ //This is the logical clock
+			TimeStamp src_timestamp = msg.getTimeStamp().get(msg.get_source());
+			//if the sender's clock is larger, our time must be that + 1
+			if(src_timestamp.isGreater(clock.getMyTime()) ){
+				clock.MyTime.setTime(src_timestamp.getTime() + 1);
+			}
+			else
+				clock.incrementTime();
+		}
+	}
+	private static TimeStampedMessage orderedMulticastReceive(){
+		TimeStampedMessage returnMsg = null;
+		while(incoming_buffer.peek() != null && incoming_buffer.peek().get_delayed() == false){
+			returnMsg = incoming_buffer.poll();
+			//so what will be on the incoming_buffer? non_broadcasted messages
+			holdbackQueue.add(returnMsg);
+		}
+		//now our holdbackQueue is populated with everything we can get out of our incoming_buffer
+		//    and we have broadcasted everything we haven't seen before for reliability
+		Collections.sort(holdbackQueue);
+		System.out.println("In global HBQ when trying to receive: " + holdbackQueue);
+
+		//check front of the holdbackQueue
+		if(!holdbackQueue.isEmpty()){
+			returnMsg = holdbackQueue.get(0);
+			if(returnMsg.getGroup().equals("")){
+				//if (  (Msg[sender] = MyV[sender] + 1) && (for all other i, Msg[i] <= MyV[i] s.t. i != sender)  )
+				if( returnMsg.getTimeStamp().get(returnMsg.get_source()).getTime() == (clock.getTimeStamp(returnMsg.get_source()).getTime() + 1)){
+					//This means that returnMsg is the next message we are expecting from returnMsg.get_source
+					//Now check that we have delivered everything that returnMsg.get_source has delivered
+					//for every process' TS, returnMsg[i], > MyV[i] we want to send a NACK
+					HashMap<String, TimeStamp> nextMsg = returnMsg.getTimeStamp();
+					for(String name : nextMsg.keySet()){
+						if(!name.equals(returnMsg.get_source())){
+							//remember, we only want to compare vector values that are NOT the sender's
+							if(!nextMsg.get(name).isLesser(clock.getTimeStamp(name))){
+								//this means we got a message that has delivered messages that we haven't. That's a problem, NACK it
+								//send the NACK to the process that has the higher TS than us with data saying which TS we want
+								TimeStampedMessage nack = new TimeStampedMessage(name, "NACK", nextMsg.get(name).getTime() + "", false);
+								outgoing_buffer.addFirst(nack);
+								modify_outgoing();
+								return null;
+							}
+						}
+					}
+					//    if we never send a NACK, we can put msg in real buffer so that the user can get it and MyV[sender]++, remove msg from holdbackQueue
+					clock.setTimeStamp(returnMsg.get_source(),clock.getTimeStamp(returnMsg.get_source()).getTime() + 1 );
+					return holdbackQueue.remove(0);
+				}         
+				//else
+				//         We are missing a message, send NACK to ask for it
+				//         a NACK is a message with the data field blank and the kind = NACK with the timestamp of the message we are looking for
+				else{
+					TimeStampedMessage nack = new TimeStampedMessage(returnMsg.get_source(), "NACK", (clock.getTimeStamp(returnMsg.get_source()).getTime() + 1) + "", false);
+					nack.setGroup(returnMsg.getGroup());
+					outgoing_buffer.addFirst(nack);
+					modify_outgoing();
+					return null;
+				}
+			}
+			else{
+				Group currGroup = groups.get(returnMsg.getGroup());
+				
+				//if (  (Msg[sender] = MyV[sender] + 1) && (for all other i, Msg[i] <= MyV[i] s.t. i != sender)  )
+				if( returnMsg.getTimeStamp().get(returnMsg.get_source()).getTime() == (currGroup.getSingleTSval(returnMsg.get_source()) + 1)){
+					//This means that returnMsg is the next message we are expecting from returnMsg.get_source
+					//Now check that we have delivered everything that returnMsg.get_source has delivered
+					//for every process' TS, returnMsg[i], > MyV[i] we want to send a NACK
+					HashMap<String, TimeStamp> nextMsg = returnMsg.getTimeStamp();
+					for(String name : nextMsg.keySet()){
+						if(!name.equals(returnMsg.get_source())){
+							//remember, we only want to compare vector values that are NOT the sender's
+							if(!nextMsg.get(name).isLesser(currGroup.getSingleTS(returnMsg.get_source()))){
+								//this means we got a message that has delivered messages that we haven't. That's a problem, NACK it
+								//send the NACK to the process that has the higher TS than us with data saying which TS we want
+								TimeStampedMessage nack = new TimeStampedMessage(name, "NACK", nextMsg.get(name).getTime() + "", false);
+								nack.setGroup(returnMsg.getGroup());
+								outgoing_buffer.addFirst(nack);
+								modify_outgoing();
+								return null;
+							}
+						}
+					}
+					//    if we never send a NACK, we can put msg in real buffer so that the user can get it and MyV[sender]++, remove msg from holdbackQueue
+					clock.setTimeStamp(returnMsg.get_source(),currGroup.getSingleTSval(returnMsg.get_source()) + 1 );
+					return holdbackQueue.remove(0);
+				}         
+				//else
+				//         We are missing a message, send NACK to ask for it
+				//         a NACK is a message with the data field blank and the kind = NACK with the timestamp of the message we are looking for
+				else{
+					TimeStampedMessage nack = new TimeStampedMessage(returnMsg.get_source(), "NACK", (currGroup.getSingleTSval(returnMsg.get_source()) + 1) + "", false);
+					nack.setGroup(returnMsg.getGroup());
+					outgoing_buffer.addFirst(nack);
+					modify_outgoing();
+					return null;
+				}
+			}
+		}
+		else
+			return null; //there is nothing to even attempt to deliver
 	}
 }

@@ -62,4 +62,36 @@ public class Message implements Serializable{
 	public String toString(){
 		return "from=" + src + " kind=" + kind + " seqNum=" + seqNum + " \n\tmsg: " + data.toString();
 	}
+	@Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = 1;
+		result = prime * result + ((data == null) ? 0 : data.hashCode());
+		result = prime * result + ((kind == null) ? 0 : kind.hashCode());
+		result = prime * result + seqNum;
+		return result;
+	}
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		Message other = (Message) obj;
+		if (data == null) {
+			if (other.data != null)
+				return false;
+		} else if (!data.equals(other.data))
+			return false;
+		if (kind == null) {
+			if (other.kind != null)
+				return false;
+		} else if (!kind.equals(other.kind))
+			return false;
+		if (seqNum != other.seqNum)
+			return false;
+		return true;
+	}
 }

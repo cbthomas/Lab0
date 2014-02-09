@@ -13,7 +13,7 @@ public class MessagePasserTester {
 	//can create messages (Message) and call MessagePasser.send
 	//     will set dst, src, kind, data
 	//can also call receive method to get anything on MessagePasser's receive buffer
-	private static String local_name, config_file, data, dest, kind, clockType, to_log;
+	private static String local_name, config_file, data, dest, kind, clockType;
 	private static int selection;
 	private static TimeStampedMessage receivedMsg;
 	private static ClockService ourClock;
@@ -24,21 +24,11 @@ public class MessagePasserTester {
 			config_file = br.readLine();
 			System.out.println("Please specify your name:");
 			local_name = br.readLine();
-			if(local_name.equals("logger"))
-				LoggingService();
-			System.out.println("Please select a clock type: logical / vector:");
-			clockType = br.readLine();
-			if(clockType.equals("logical")){
-				ourClock = new LogicalClock(new TimeStamp(local_name, 0));
-			}
-			else if(clockType.equals("vector")){
-				ourClock = new VectorClock();
-				ourClock.setMyTime(new TimeStamp(local_name, 0));
-			}
-			else{
-				System.out.println("You have entered in an invalid clock type. Please start over.");
-				System.exit(1);
-			}
+			clockType = "vector";
+
+			ourClock = new VectorClock();
+			ourClock.setMyTime(new TimeStamp(local_name, 0));
+
 			//Now that we have the config filename and local name, we can instantiate our MessagePasser
 			MessagePasser MP = new MessagePasser(config_file, local_name);
 			//Now to prompt the user for what to do
@@ -48,72 +38,27 @@ public class MessagePasserTester {
 							+ "1. Send Message\n2. Check Messages\n3. Get Event Timestamp\n4. Exit");
 					selection = Integer.parseInt(br.readLine());
 					if(selection == 1){
-						System.out.print("Please name the destination: ");
+						System.out.print("Please name the destination (or group): ");
 						dest = br.readLine();
 						System.out.print("Specify the kind of message: ");
 						kind = br.readLine();
 						System.out.print("What is the data: ");
 						data = br.readLine();
-						System.out.print("Do you want to log the message? (y/n)");
-						to_log = br.readLine();
 						System.out.println("Processing message......");
-						if(to_log.equals("y")){
-							MP.send(new TimeStampedMessage(dest, kind, data, true));
-						}
-						else
-							MP.send(new TimeStampedMessage(dest, kind, data, false));
+						MP.send(new TimeStampedMessage(dest, kind, data, false));
 					}else if(selection == 2){
 						System.out.println("Checking....");
 						receivedMsg = MP.receive();
 						if(receivedMsg != null){
 							System.out.println("You have received the following message:\n" + receivedMsg.toString());
-							System.out.println("Would you like the log the message you just received? (y/n)");
-							to_log = br.readLine();
-							if(to_log.equals("y")){
-								if(clockType.equals("vector")){
-									receivedMsg.setTimeStamp( ((VectorClock)ourClock).getVectorClock());
-								}
-								else{
-									receivedMsg.addTimeStamp(local_name, ourClock.getMyTime());
-								}
-								//Modify received Msg's timestamp to decouple it from our global clock
-								receivedMsg.setTimeStamp(receivedMsg.copyMsgTimeStamp());
-								MP.send(new TimeStampedMessage("logger", "log", receivedMsg, false));
-							}
 						}
 						else
 							System.out.println("You have no new messages ready at this time.");
 						
 					}else if(selection == 3){
 						//this is for getting a timestamp from the system for a non-message event
-						//if you want to log this, just create a normal TSM with dst=logger and don't mark logged as true
-						System.out.println("Do you want to also log this event? (y/n)");
-						to_log = br.readLine();
-						if(to_log.equals("y")){
-							System.out.println("What is the data for the event?");
-							data = br.readLine();
-							dest = "logger";
-							kind = "log";
-							//possible race condition here? how to solve?
 							ourClock.incrementTime();
 							System.out.println("The timestamp for this event is: " + ourClock.MyTime.getTime());
-							//Sending the data to be logged with MP.send will actually increment the time
-							
-							TimeStampedMessage tsm = new TimeStampedMessage(local_name, kind, data, false);
-							if(clockType.equals("vector")){
-								tsm.setTimeStamp( ((VectorClock)ourClock).getVectorClock());
-							}
-							else{
-								tsm.addTimeStamp(local_name, ourClock.getMyTime());
-							}
-							tsm.setTimeStamp(tsm.copyMsgTimeStamp());
-							MP.send(new TimeStampedMessage(dest, kind, tsm, false));
-							
-						}
-						else{
-							ourClock.incrementTime();
-							System.out.println("The timestamp for this event is: " + ourClock.MyTime.getTime());
-						}
 					}
 					else if(selection == 4){
 						

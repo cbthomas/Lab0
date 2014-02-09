@@ -42,7 +42,7 @@ public class TimeStamp implements Serializable{
 
 	public Boolean isGreater(TimeStamp ts){
 
-		if(this.time > ts.time)
+		if(this.time >= ts.time)
 			return true;
 		else
 			return false;
@@ -50,13 +50,42 @@ public class TimeStamp implements Serializable{
 
 	public Boolean isLesser(TimeStamp ts){
 
-		if(this.time < ts.time)
+		if(this.time <= ts.time)
 			return true;
 		else
 			return false;
 	}
 	public String toString(){
 		return time+ " ";
+	}
+
+	@Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = 1;
+		result = prime * result
+				+ ((procName == null) ? 0 : procName.hashCode());
+		result = prime * result + time;
+		return result;
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		TimeStamp other = (TimeStamp) obj;
+		if (procName == null) {
+			if (other.procName != null)
+				return false;
+		} else if (!procName.equals(other.procName))
+			return false;
+		if (time != other.time)
+			return false;
+		return true;
 	}
 
 }
