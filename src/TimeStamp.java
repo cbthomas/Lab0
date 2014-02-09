@@ -47,7 +47,9 @@ public class TimeStamp implements Serializable{
 		else
 			return false;
 	}
-
+	public Boolean isStrictlyGreater(TimeStamp ts){
+		return this.time > ts.time;
+	}
 	public Boolean isLesser(TimeStamp ts){
 
 		if(this.time <= ts.time)

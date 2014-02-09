@@ -19,10 +19,25 @@ public class Group {
 		holdbackQueue = new ArrayList<TimeStampedMessage>();
 		mySentList = new ArrayList<TimeStampedMessage>();
 	}
+	public TimeStampedMessage getFromSentList(int index){
+		return mySentList.get(index-1);
+	}
 	public void addToMySentList(TimeStampedMessage msg){
 		mySentList.add(msg);
 	}
-	
+	public boolean delivered(TimeStampedMessage msg){
+		//if msg's timestamp is < the group timestamp, then it's already been delivered
+		//msg could also be in holdbackqueue or in global HBQ possibly
+		for(TimeStampedMessage inQueueMsg : holdbackQueue){
+			if(inQueueMsg.equals(msg))
+				return true;
+		}
+		for(String name : msg.getTimeStamp().keySet()){
+			if(msg.getTimeStamp().get(name).isStrictlyGreater(groupTS.getTimeStamp(name)))
+				return false;
+		}
+		return true;
+	}
 	public void addToGroup(String name){
 		members.add(name);
 	}
@@ -45,8 +60,10 @@ public class Group {
 		}
 	}
 	public void addToAckQueue(TimeStampedMessage msg){
-		ackQueue.add(msg);
-		Collections.sort(ackQueue);
+		if(!ackQueue.contains(msg)){
+			ackQueue.add(msg);
+			Collections.sort(ackQueue);
+		}
 		System.out.println("ackQueue: " + ackQueue);
 	}
 	public ArrayList<String> missingAck(TimeStampedMessage msg){
@@ -82,7 +99,6 @@ public class Group {
 		System.out.println("just added to group holdbackqueue: " + holdbackQueue);
 	}
 	public TimeStampedMessage getFromHoldbackQueue(){
-		System.out.println("just entered remove, this is the HBQ " + holdbackQueue);
 		TimeStampedMessage removedMsg = null;
 		if(!holdbackQueue.isEmpty()){
 			if(holdbackQueue.get(0).get_delayed() == false)

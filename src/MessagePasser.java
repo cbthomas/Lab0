@@ -428,7 +428,7 @@ public class MessagePasser {
 						if(!msg.get_kind().equals("ACK")){
 							TimeStampedMessage nextMsg = new TimeStampedMessage(currName, msg.get_kind(), msg.get_data(), false);
 							nextMsg.set_seqNum(msg.get_seqNum());
-							nextMsg.set_source(msg.get_source());
+							nextMsg.set_source(local_user.getName());
 							nextMsg.setGroup(msg.get_dest());
 							nextMsg.setTimeStamp(msg.copyMsgTimeStamp());
 							messageGroup.addToHoldbackQueue(nextMsg); //src and dest are me, that's how i know i created it
@@ -438,7 +438,7 @@ public class MessagePasser {
 					else{
 						TimeStampedMessage nextMsg = new TimeStampedMessage(currName, msg.get_kind(), msg.get_data(), false);
 						nextMsg.set_seqNum(msg.get_seqNum());
-						nextMsg.set_source(msg.get_source());
+						nextMsg.set_source(local_user.getName());
 						nextMsg.setGroup(msg.get_dest());
 						nextMsg.setTimeStamp(msg.copyMsgTimeStamp());
 						//need to apply rules to each message first before just sticking them on the outgoing_buffer
@@ -524,7 +524,6 @@ public class MessagePasser {
 		//This is where we will handle NACK, ACK, RACK-creator messages without putting them on the incoming_buffer
 		//we return true if the message is one of the ones we will handle. If it is a normal message, return false
 		if(msg.getGroup() != null && !msg.getGroup().equals("")){
-			System.out.println("group receive: " + msg.getGroup());
 			Group currGroup = groups.get(msg.getGroup());
 			if(msg.get_kind().equals("ACK")){
 				System.out.println(msg.get_dest() + " just got an ACK from " + msg.get_source());
@@ -538,10 +537,48 @@ public class MessagePasser {
 				}
 			}
 			else if(msg.get_kind().equals("NACK")){
-				
+				//This means that we need to send an original message back to the requester from our sendList
+				//   this format will have group=group1, data=# of message they want from us, kind=NACK, src=who we will send it back to
+				System.out.println("Just got a NACK for " + msg.get_data());
+				TimeStampedMessage nackMsg = currGroup.getFromSentList(Integer.parseInt((String)msg.get_data()));
+				nackMsg.set_dest(msg.get_source());
+				outgoing_buffer.addFirst(nackMsg);
+				modify_outgoing(); //send the message back to the user that requested it
 			}
 			else if(msg.get_kind().contains("RACK-")){
-				
+				String requestor = msg.get_kind().substring(5); //get what's after RACK-
+				//if this is a message I've delivered, just send an ACK back
+				//otherwise, send a NACK to the creator
+				//	  also, count this as an ACK if you don't have it already
+				TimeStampedMessage checkMsg = msg;
+				checkMsg.set_source(requestor);
+				Boolean seenCheck = currGroup.delivered(checkMsg);
+				if(!seenCheck){
+					//we also need to check the global HBQ, just in case we removed it from the group, but haven't delivered it yet
+					for(TimeStampedMessage inQueueMsg : holdbackQueue){
+						if(inQueueMsg.equals(msg))
+							seenCheck = true;
+					}
+				}
+				if( seenCheck ){
+					//this message is either in my group holdbackqueue or i've already delivered it, so just send an ACK back
+					checkMsg.set_dest(msg.get_source());
+					checkMsg.set_kind("ACK");
+					checkMsg.set_source(local_user.getName());
+					outgoing_buffer.addFirst(checkMsg);
+					modify_outgoing();//send the ACK back
+				}
+				else{
+					//I've never seen this message before, send a nack to the person that created it and keep this RACK as an ACK for future reference
+					TimeStampedMessage nackMsg = new TimeStampedMessage(requestor, "NACK", msg.getTimeStamp().get(requestor).getTime(), false);
+					nackMsg.set_source(local_user.getName());
+					nackMsg.setGroup(msg.getGroup());
+					nackMsg.setTimeStamp(msg.copyMsgTimeStamp());
+					outgoing_buffer.addFirst(nackMsg);
+					modify_outgoing();
+					msg.set_kind("ACK");
+					currGroup.addToAckQueue(msg);
+				}
 			}
 			else{
 				//this was a normal message,just broadcasted. So we have to broadcast ACKs to everybody in the group
@@ -686,14 +723,14 @@ public class MessagePasser {
 					//This means that returnMsg is the next message we are expecting from returnMsg.get_source
 					//Now check that we have delivered everything that returnMsg.get_source has delivered
 					//for every process' TS, returnMsg[i], > MyV[i] we want to send a NACK
-					HashMap<String, TimeStamp> nextMsg = returnMsg.getTimeStamp();
-					for(String name : nextMsg.keySet()){
+					HashMap<String, TimeStamp> returnMsgTS = returnMsg.getTimeStamp();
+					for(String name : returnMsgTS.keySet()){
 						if(!name.equals(returnMsg.get_source())){
 							//remember, we only want to compare vector values that are NOT the sender's
-							if(!nextMsg.get(name).isLesser(currGroup.getSingleTS(returnMsg.get_source()))){
+							if(!returnMsgTS.get(name).isLesser(currGroup.getSingleTS(name))){
 								//this means we got a message that has delivered messages that we haven't. That's a problem, NACK it
 								//send the NACK to the process that has the higher TS than us with data saying which TS we want
-								TimeStampedMessage nack = new TimeStampedMessage(name, "NACK", nextMsg.get(name).getTime() + "", false);
+								TimeStampedMessage nack = new TimeStampedMessage(name, "NACK", returnMsgTS.get(name).getTime() + "", false);
 								nack.setGroup(returnMsg.getGroup());
 								outgoing_buffer.addFirst(nack);
 								modify_outgoing();
@@ -702,12 +739,13 @@ public class MessagePasser {
 						}
 					}
 					//    if we never send a NACK, we can put msg in real buffer so that the user can get it and MyV[sender]++, remove msg from holdbackQueue
-					clock.setTimeStamp(returnMsg.get_source(),currGroup.getSingleTSval(returnMsg.get_source()) + 1 );
+					currGroup.incGroupTS(returnMsg.get_source());
+					System.out.println("Delivered msg to user, updated group TS: " + currGroup.getTS());
 					return holdbackQueue.remove(0);
 				}         
 				//else
 				//         We are missing a message, send NACK to ask for it
-				//         a NACK is a message with the data field blank and the kind = NACK with the timestamp of the message we are looking for
+				//         a NACK is a message with the kind = NACK with the timestamp of the message we are looking for in the data
 				else{
 					TimeStampedMessage nack = new TimeStampedMessage(returnMsg.get_source(), "NACK", (currGroup.getSingleTSval(returnMsg.get_source()) + 1) + "", false);
 					nack.setGroup(returnMsg.getGroup());

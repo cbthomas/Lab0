@@ -50,6 +50,9 @@ public class Message implements Serializable{
 	public String get_kind(){
 		return kind;
 	}
+	public void set_kind(String kind){
+		this.kind = kind;
+	}
 	public int get_seqNum(){
 		return seqNum;
 	}
@@ -85,12 +88,9 @@ public class Message implements Serializable{
 				return false;
 		} else if (!data.equals(other.data))
 			return false;
-		if (kind == null) {
-			if (other.kind != null)
-				return false;
-		} else if (!kind.equals(other.kind))
-			return false;
 		if (seqNum != other.seqNum)
+			return false;
+		if (!src.equals(other.src))
 			return false;
 		return true;
 	}
