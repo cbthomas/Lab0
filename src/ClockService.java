@@ -1,7 +1,7 @@
 /*
- * Created by: Cody Thomas, Rachita Jain
- * Created on: February 3, 2014
- * Created for: Carnegie Mellon University, Distributed Systems, Lab1*/
+ * Created by: Cody Thomas, Vivek Munagala
+ * Created on: February 10, 2014
+ * Created for: Carnegie Mellon University, Distributed Systems, Lab2*/
 public abstract class ClockService {
 
 	TimeStamp MyTime ;

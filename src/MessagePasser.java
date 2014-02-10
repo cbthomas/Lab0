@@ -1,7 +1,7 @@
 /*
- * Created by: Cody Thomas, Rachita Jain
- * Created on: February 3, 2014
- * Created for: Carnegie Mellon University, Distributed Systems, Lab1*/
+ * Created by: Cody Thomas, Vivek Munagala
+ * Created on: February 10, 2014
+ * Created for: Carnegie Mellon University, Distributed Systems, Lab2*/
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -257,7 +257,7 @@ public class MessagePasser {
 				message.set_delayed(true);
 				message.setTimeStamp(message.copyMsgTimeStamp());
 				outgoing_buffer.addFirst(message);			
-				System.out.println("just hit a delay rule, adding to the outgoin and returning: " + message);
+				//System.out.println("just hit a delay rule, adding to the outgoin and returning: " + message);
 				return;
 			} else if(action.toLowerCase().equals("duplicate")){
 				//Mark all delayed messages as no longer delayed
@@ -285,10 +285,7 @@ public class MessagePasser {
 			msg.set_delayed(false);
 			//System.out.println("Still on outgoing buffer: " + msg);
 		}
-		System.out.println("Just finished send rules for non delay msg: new buffer: ");
-		for(TimeStampedMessage msg : outgoing_buffer){
-			System.out.println(msg + " delay=" + msg.get_delayed());
-		}
+		//System.out.println("Just finished send rules for non delay msg: new buffer: ");
 	}
 	TimeStampedMessage receive(){
 		//first call a method to check for updates on rules
@@ -441,7 +438,7 @@ public class MessagePasser {
 			if(messageGroup != null){
 				//Create an exact copy of this message that we're goina send out to all members of the group
 				for(String currName : groups.get(msg.get_dest()).traverseGroup()){
-					System.out.println("About to add group message for " + currName + " through applySendRules");
+					//System.out.println("About to add group message for " + currName + " through applySendRules");
 					if(currName.equals(local_user.getName())){
 						//we don't want to be sending our ACK to ourself, otherwise if it's a message we are creating, we make note
 						if(!msg.get_kind().equals("ACK")){
@@ -555,11 +552,11 @@ public class MessagePasser {
 		if(msg.getGroup() != null && !msg.getGroup().equals("")){
 			Group currGroup = groups.get(msg.getGroup());
 			if(msg.get_kind().equals("ACK")){
-				System.out.println(msg.get_dest() + " just got an ACK from " + msg.get_source() + ": " + msg);
+				//System.out.println(msg.get_dest() + " just got an ACK from " + msg.get_source() + ": " + msg);
 				//we first want to check to make sure this isn't an ACK for something we already delivered to the global HBQ
 				for(TimeStampedMessage inQueueMsg : holdbackQueue){
 					if(inQueueMsg.isACK(msg)){
-						System.out.println("just got an ack for something in global HBQ");
+						//System.out.println("just got an ack for something in global HBQ");
 						return true;
 					}
 						
@@ -580,7 +577,7 @@ public class MessagePasser {
 			else if(msg.get_kind().equals("NACK")){
 				//This means that we need to send an original message back to the requester from our sendList
 				//   this format will have group=group1, data=# of message they want from us, kind=NACK, src=who we will send it back to
-				System.out.println("Just got a NACK for " + msg.get_data());
+				//System.out.println("Just got a NACK for " + msg.get_data());
 				Integer nackNum = (Integer) msg.get_data();
 				TimeStampedMessage tempMsg = currGroup.getFromSentList(nackNum);
 				TimeStampedMessage nackMsg = new TimeStampedMessage(msg.get_source(), tempMsg.get_kind(), tempMsg.get_data(), false);
@@ -594,7 +591,7 @@ public class MessagePasser {
 				modify_outgoing(); //send the message back to the user that requested it
 			}
 			else if(msg.get_kind().contains("RACK-")){
-				System.out.println(local_user.getName() + " just got a RACK: " + msg);
+				//System.out.println(local_user.getName() + " just got a RACK: " + msg);
 				String requestor = msg.get_kind().substring(5); //get what's after RACK-
 				//if this is a message I've delivered, just send an ACK back
 				//otherwise, send a NACK to the creator
@@ -614,7 +611,7 @@ public class MessagePasser {
 				}
 				if( seenCheck ){
 					//this message is either in my group holdbackqueue or i've already delivered it, so just send an ACK back
-					System.out.println("RACK response: i've seen it, sending an ACK");
+					//System.out.println("RACK response: i've seen it, sending an ACK");
 					checkMsg.set_dest(msg.get_source());
 					checkMsg.set_kind("ACK");
 					checkMsg.set_source(local_user.getName());
@@ -624,7 +621,7 @@ public class MessagePasser {
 				}
 				else{
 					//I've never seen this message before, send a nack to the person that created it and keep this RACK as an ACK for future reference
-					System.out.println("RACK response: what? sending a NACK to " + requestor);
+					//System.out.println("RACK response: what? sending a NACK to " + requestor);
 					TimeStampedMessage nackMsg = new TimeStampedMessage(requestor, "NACK", msg.getTimeStamp().get(requestor).getTime(), false);
 					nackMsg.set_source(local_user.getName());
 					nackMsg.setGroup(msg.getGroup());
@@ -656,13 +653,13 @@ public class MessagePasser {
 				if(!seenCheck){			
 					applySendRules(rDeliverMsg);
 					//outgoing_buffer.addFirst(rDeliverMsg);
-					System.out.println("Just got a normal group message. Sending ACKs");
+					//System.out.println("Just got a normal group message. Sending ACKs");
 					modify_outgoing(); //actually send the messages. This will go through and split them up into msg/user instead of /group
 					msg.set_delayed(true); //we haven't received an ACK from everybody for this, so delayed is true for now
 					currGroup.addToHoldbackQueue(msg);
 					//getting the message in the first place is an implicate ACK that the sender also go the message, so add an ACK to the group ACKqueue
 					rDeliverMsg.set_source(msg.get_source());
-					System.out.println(msg.get_dest() + " just got an implicit ACK from " + msg.get_source());
+					//System.out.println(msg.get_dest() + " just got an implicit ACK from " + msg.get_source());
 					currGroup.addToAckQueue(rDeliverMsg);
 					if(currGroup.allAcks(msg)){
 						//This means the message we just got was the last ACK we needed
@@ -675,8 +672,8 @@ public class MessagePasser {
 				else{
 					//if we have seen it, just send an ACK back
 					rDeliverMsg.set_dest(msg.get_source());
-					System.out.println("Got a message I've seen before, sending ACK back to " + rDeliverMsg.get_dest());
-					System.out.println("with message: " + rDeliverMsg);					
+					//System.out.println("Got a message I've seen before, sending ACK back to " + rDeliverMsg.get_dest());
+					//System.out.println("with message: " + rDeliverMsg);					
 					applySendRules(rDeliverMsg);
 					modify_outgoing();
 				}
@@ -752,7 +749,7 @@ public class MessagePasser {
 		//now our holdbackQueue is populated with everything we can get out of our incoming_buffer
 		//    and we have broadcasted everything we haven't seen before for reliability
 		Collections.sort(holdbackQueue);
-		System.out.println("In global HBQ when trying to receive: " + holdbackQueue);
+		//System.out.println("In global HBQ when trying to receive: " + holdbackQueue);
 
 		//check front of the holdbackQueue
 		if(!holdbackQueue.isEmpty()){
@@ -842,7 +839,7 @@ public class MessagePasser {
 			//This thread runs forever in an infinite loop waiting 2 seconds each time
 			try {
 				while(true){
-					Thread.sleep(20000); //10 seconds
+					Thread.sleep(20000); //20 seconds
 					for(String groupName : groups.keySet()){
 						Group currGroup = groups.get(groupName);
 						if(currGroup.isMemberOfGroup(local_user.getName())){
@@ -866,7 +863,7 @@ public class MessagePasser {
 										resend.setTimeStamp(nextMsg.copyMsgTimeStamp());
 										resend.setGroup(nextMsg.getGroup());
 										resend.set_delayed(false);
-										System.out.println("Liveness: resending to " + dest + " " + resend);
+										//System.out.println("Liveness: resending to " + dest + " " + resend);
 										//applySendRules(resend);
 										outgoing_buffer.addFirst(resend);
 									}

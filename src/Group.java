@@ -1,3 +1,7 @@
+/*
+ * Created by: Cody Thomas, Vivek Munagala
+ * Created on: February 10, 2014
+ * Created for: Carnegie Mellon University, Distributed Systems, Lab2*/
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -97,7 +101,7 @@ public class Group {
 			ackQueue.add(msg);
 			Collections.sort(ackQueue);
 		}
-		System.out.println("ackQueue: " + ackQueue);
+		//System.out.println("ackQueue: " + ackQueue);
 		ackLock.unlock();
 	}
 	public ArrayList<String> missingAck(TimeStampedMessage msg, String myName){
@@ -174,8 +178,8 @@ public class Group {
 				}
 			}
 		}
-		System.out.println("just removed " + removedMsg + " from group HBQ");
-		System.out.println("still in removed, now it is: " + holdbackQueue);
+		//System.out.println("just removed " + removedMsg + " from group HBQ");
+		//System.out.println("still in removed, now it is: " + holdbackQueue);
 		holdbackLock.unlock();
 		return removedMsg;
 	}
