@@ -35,30 +35,14 @@ public class MessagePasserTester {
 			while(true){
 				try{
 					System.out.println("Please input a number for your selection (1-4):\n"
-							+ "1. Send Message\n2. Check Messages\n3. Get Event Timestamp\n4. Exit");
+							+ "1. Request Critical Section\n2. Release Critical Section\n3. Get Message Counts\n4. Exit");
 					selection = Integer.parseInt(br.readLine());
 					if(selection == 1){
-						System.out.print("Please name the destination (or group): ");
-						dest = br.readLine();
-						System.out.print("Specify the kind of message: ");
-						kind = br.readLine();
-						System.out.print("What is the data: ");
-						data = br.readLine();
-						System.out.println("Processing message......");
-						MP.send(new TimeStampedMessage(dest, kind, data, false));
+						MP.requestCS();
 					}else if(selection == 2){
-						System.out.println("Checking....");
-						receivedMsg = MP.receive();
-						if(receivedMsg != null){
-							System.out.println("You have received the following message:\n" + receivedMsg.toString());
-						}
-						else
-							System.out.println("You have no new messages ready at this time.");
-						
+						MP.releaseCS();						
 					}else if(selection == 3){
-						//this is for getting a timestamp from the system for a non-message event
-							ourClock.incrementTime();
-							System.out.println("The timestamp for this event is: " + ourClock.MyTime.getTime());
+						//System.out.println(MP.getMessageCount());
 					}
 					else if(selection == 4){
 						

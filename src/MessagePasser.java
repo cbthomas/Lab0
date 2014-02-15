@@ -47,6 +47,9 @@ public class MessagePasser {
     //Clock variables
     private static VectorClock clock;
     private static String clockType;
+    //Mutual Exclusion variables
+    public static boolean voted;
+    public static String state;
     
 	public MessagePasser(String configuration_filename, String local_name){
 		//parse configuration_filename and setup sockets for communicating with all processes
@@ -68,6 +71,8 @@ public class MessagePasser {
 		clock = (VectorClock) MessagePasserTester.getClock();
 		clockType = MessagePasserTester.getClockType();
 		
+		voted = false;
+		state = "RELEASED";
 		try { 
 			//try opening the configuration_filename
 			File config_file = new File(configuration_filename);
@@ -192,7 +197,7 @@ public class MessagePasser {
 			System.out.println("Error updating rules. All rules have been deleted. Please check your config file.");
 		}
 	}
-	void send(TimeStampedMessage message){
+	static void send(TimeStampedMessage message){
 		String action = "";
 		//first call a method to check for updates on rules
 		updateRules(config_filename);
@@ -450,6 +455,16 @@ public class MessagePasser {
 							messageGroup.addToHoldbackQueue(nextMsg); //src and dest are me, that's how i know i created it
 							messageGroup.addToMySentList(nextMsg); //add it in order to the list of messages I sent, may not be used...
 						}
+						if(voted == false){
+							TimeStampedMessage nextMsg = new TimeStampedMessage(currName, "ACK", msg.get_data(), false);
+							nextMsg.set_seqNum(msg.get_seqNum());
+							nextMsg.set_source(local_user.getName());
+							nextMsg.setGroup(msg.get_dest());
+							nextMsg.setTimeStamp(msg.copyMsgTimeStamp());
+							messageGroup.addToAckQueue(nextMsg);
+							voted = true;
+						}
+
 					}
 					else{
 						TimeStampedMessage nextMsg = new TimeStampedMessage(currName, msg.get_kind(), msg.get_data(), false);
@@ -566,13 +581,8 @@ public class MessagePasser {
 					return true;
 				}
 				currGroup.addToAckQueue(msg); //add to the queue that we got an ACK
-				if(currGroup.allAcks(msg)){
-					//This means the message we just got was the last ACK we needed
-					currGroup.removeFromAckQueue(msg);
-					TimeStampedMessage addToHBQ = currGroup.getFromHoldbackQueue(msg);
-					if(!addToHBQ.get_dest().equals(addToHBQ.get_source()))
-						holdbackQueue.add(addToHBQ); //don't add messages we created to the overall HBQ
-				}
+				gotFinalACK(msg);
+				return true;
 			}
 			else if(msg.get_kind().equals("NACK")){
 				//This means that we need to send an original message back to the requester from our sendList
@@ -650,24 +660,29 @@ public class MessagePasser {
 				rDeliverMsg.set_source(local_user.getName());
 				rDeliverMsg.setGroup(msg.getGroup());
 				rDeliverMsg.setTimeStamp(msg.copyMsgTimeStamp());
-				if(!seenCheck){			
-					applySendRules(rDeliverMsg);
-					//outgoing_buffer.addFirst(rDeliverMsg);
-					//System.out.println("Just got a normal group message. Sending ACKs");
-					modify_outgoing(); //actually send the messages. This will go through and split them up into msg/user instead of /group
+				if(!seenCheck){		
+					if(msg.get_kind().equals("REQUEST")){
+						if(voted != true && !state.equals("HELD")){
+							applySendRules(rDeliverMsg);
+							//outgoing_buffer.addFirst(rDeliverMsg);
+							//System.out.println("Just got a normal group message. Sending ACKs");
+							modify_outgoing(); //actually send the messages. This will go through and split them up into msg/user instead of /group
+							voted = true;
+						}
+					}
+					else{
+						applySendRules(rDeliverMsg);
+						//outgoing_buffer.addFirst(rDeliverMsg);
+						//System.out.println("Just got a normal group message. Sending ACKs");
+						modify_outgoing(); //actually send the messages. This will go through and split them up into msg/user instead of /group
+					}
 					msg.set_delayed(true); //we haven't received an ACK from everybody for this, so delayed is true for now
 					currGroup.addToHoldbackQueue(msg);
 					//getting the message in the first place is an implicate ACK that the sender also go the message, so add an ACK to the group ACKqueue
 					rDeliverMsg.set_source(msg.get_source());
 					//System.out.println(msg.get_dest() + " just got an implicit ACK from " + msg.get_source());
 					currGroup.addToAckQueue(rDeliverMsg);
-					if(currGroup.allAcks(msg)){
-						//This means the message we just got was the last ACK we needed
-						currGroup.removeFromAckQueue(msg);
-						TimeStampedMessage addToHBQ = currGroup.getFromHoldbackQueue(msg);
-						if(!addToHBQ.get_dest().equals(addToHBQ.get_source()))
-							holdbackQueue.add(addToHBQ); //don't add messages we created to the overall HBQ
-					}
+					gotFinalACK(msg); 
 				}
 				else{
 					//if we have seen it, just send an ACK back
@@ -708,36 +723,6 @@ public class MessagePasser {
 			System.out.println(nodes);
 		}
 		return null;
-	}
-	private static void lab1receive(TimeStampedMessage msg){
-		if(clockType.equals("vector")){ //This is the vector clock
-			HashMap<String, TimeStamp> src_timestamp = msg.getTimeStamp();
-			for(String name : src_timestamp.keySet()){
-				if( src_timestamp.get(name).isGreater( ((VectorClock)clock).getTimeStamp(name))){
-					((VectorClock)clock).setTimeStamp(name, src_timestamp.get(name).getTime());
-				}
-			}
-			if(msg.getTimeStamp().get(msg.get_source()).isGreater(clock.getMyTime())){
-				//System.out.println("Msg timestamp: " + msg.getTimeStamp().get(msg.get_source()).getTime() + "is greater than receiver's timestamp: " + clock.MyTime.getTime());
-				
-				//this means that the source's timestamp is larger than ours
-				//so set our timestamp to their's + 1
-				int newTime = msg.getTimeStamp().get(msg.get_source()).getTime()+1;
-				((VectorClock)clock).setMyTime(msg.get_dest(), newTime);
-				//System.out.println(msg.get_dest() + "'s new timestamp: " + clock.MyTime.getTime());
-			}
-			else
-				clock.incrementTime();
-		}
-		else{ //This is the logical clock
-			TimeStamp src_timestamp = msg.getTimeStamp().get(msg.get_source());
-			//if the sender's clock is larger, our time must be that + 1
-			if(src_timestamp.isGreater(clock.getMyTime()) ){
-				clock.MyTime.setTime(src_timestamp.getTime() + 1);
-			}
-			else
-				clock.incrementTime();
-		}
 	}
 	private static TimeStampedMessage orderedMulticastReceive(){
 		TimeStampedMessage returnMsg = null;
@@ -846,26 +831,28 @@ public class MessagePasser {
 							//for each group that I am part of, check that group's holdback queue to see if we are waiting on any ACKs
 							TimeStampedMessage nextMsg = currGroup.peekAtHBQ();
 							if(nextMsg != null){
-								ArrayList<String> RACKusers = currGroup.missingAck(nextMsg, local_user.getName());
+								ArrayList<String> RACKusers = currGroup.missingAck(nextMsg);
 								if(RACKusers.size()>0){
 									for(String dest : RACKusers){
-										TimeStampedMessage resend;
-										if(nextMsg.get_source().equals(local_user.getName())){
-											//I'm still waiting for ACKs from a message I created, so just send the message again
-											resend = new TimeStampedMessage(dest, nextMsg.get_kind(), nextMsg.get_data(), false);
+										if(!dest.equals(local_user.getName())){
+											TimeStampedMessage resend;
+											if(nextMsg.get_source().equals(local_user.getName())){
+												//I'm still waiting for ACKs from a message I created, so just send the message again
+												resend = new TimeStampedMessage(dest, nextMsg.get_kind(), nextMsg.get_data(), false);
+											}
+											else{
+												//I'm still waiting for ACKs from other users, so RACK them
+												resend = new TimeStampedMessage(dest, "RACK-" + nextMsg.get_source(), nextMsg.get_data(), false);	
+											}
+											resend.set_source(local_user.getName());
+											resend.set_seqNum(nextMsg.get_seqNum());
+											resend.setTimeStamp(nextMsg.copyMsgTimeStamp());
+											resend.setGroup(nextMsg.getGroup());
+											resend.set_delayed(false);
+											//System.out.println("Liveness: resending to " + dest + " " + resend);
+											//applySendRules(resend);
+											outgoing_buffer.addFirst(resend);
 										}
-										else{
-											//I'm still waiting for ACKs from other users, so RACK them
-											resend = new TimeStampedMessage(dest, "RACK-" + nextMsg.get_source(), nextMsg.get_data(), false);	
-										}
-										resend.set_source(local_user.getName());
-										resend.set_seqNum(nextMsg.get_seqNum());
-										resend.setTimeStamp(nextMsg.copyMsgTimeStamp());
-										resend.setGroup(nextMsg.getGroup());
-										resend.set_delayed(false);
-										//System.out.println("Liveness: resending to " + dest + " " + resend);
-										//applySendRules(resend);
-										outgoing_buffer.addFirst(resend);
 									}
 									
 								}
@@ -882,5 +869,82 @@ public class MessagePasser {
 			
 		}
 		
+	}
+	public static void requestCS(){
+		if(!state.equals("HELD")){
+			String myGroupName = "group"+local_user.getName();
+			Group myGroup = groups.get(myGroupName);
+			TimeStampedMessage requestMsg = new TimeStampedMessage(myGroupName, "REQUEST", "doesn't matter", false);
+			send(requestMsg);
+		}
+		else
+			System.out.println("Sorry, you already have the critical section. Please wait to request until you have released it.");
+		return;
+	}
+	public static void releaseCS(){
+		if(state.equals("HELD")){
+			state = "RELEASE";
+			voted=false;
+			System.out.println("You have just exited the critical section.");
+		}
+		else
+			System.out.println("You must first have the critical section to release it. Sorry.");
+		return;
+	}
+	private static void gotFinalACK(TimeStampedMessage msg){
+		Group currGroup = groups.get(msg.getGroup());
+		if(currGroup.allAcks(msg)){
+			//This means the message we just got was the last ACK we needed
+			currGroup.removeFromAckQueue(msg);
+			TimeStampedMessage addToHBQ = currGroup.getFromHoldbackQueue(msg);
+			if(true){
+				holdbackQueue.add(addToHBQ); //don't add messages we created to the overall HBQ
+				//check kind of message to see if we got all of the ACKs required for a REQUEST or RELEASE message
+				if(addToHBQ.get_kind().equals("REQUEST")){
+					if(addToHBQ.get_source().equals(local_user.getName())){
+						//You just got access to the critical source
+						state = "HELD";
+						System.out.println("Congratulations. You now have the critical source.");
+						return;
+					}
+				}
+				if(addToHBQ.get_kind().equals("RELEASE")){
+					//now you need to send an ACK to somebody or set voted back to false					
+					//you just confirmed a RELEASE message, so now you can vote again in another group
+					voted = false;
+					for(String groupName : groups.keySet()){
+						if(groups.get(groupName).isMemberOfGroup(local_user.getName())){
+							//go through each group you're a member of and see if there is a message in the HBQ that needs an ACK
+							TimeStampedMessage delayedMessage = groups.get(groupName).peekAtHBQ();
+							if(delayedMessage != null){
+								if(delayedMessage.get_kind().equals("REQUEST")){
+									//we are missing an ACK from ourselves and possibly others and must send an ACK to everybody
+									TimeStampedMessage newACK = new TimeStampedMessage(groupName, "ACK", delayedMessage.get_data(), false);
+									newACK.set_seqNum(delayedMessage.get_seqNum());
+									newACK.setGroup(groupName);
+									newACK.setTimeStamp(delayedMessage.copyMsgTimeStamp());
+									newACK.set_source(local_user.getName());
+									outgoing_buffer.addFirst(newACK);
+									modify_outgoing(); //this will also add our ACK to our own ACK queue
+									if(groups.get(groupName).allAcks(delayedMessage)){
+										if(delayedMessage.get_source().equals(local_user.getName())){
+											//we want to vote for ourselves
+											state = "HELD";
+											groups.get(groupName).removeFromAckQueue(delayedMessage); //might have an issue here
+											groups.get(groupName).getFromHoldbackQueue(delayedMessage);														
+										}
+										voted = true;
+										return;
+									}
+								}																						
+							}
+							
+						}
+	
+					}
+					
+				}
+			}
+		}
 	}
 }

@@ -104,12 +104,11 @@ public class Group {
 		//System.out.println("ackQueue: " + ackQueue);
 		ackLock.unlock();
 	}
-	public ArrayList<String> missingAck(TimeStampedMessage msg, String myName){
+	public ArrayList<String> missingAck(TimeStampedMessage msg){
 		ArrayList<String> missingAcks = new ArrayList<String>();
 		//add everybody initially and remove the names of the ones we have acks from
 		for(String name : members)
 			missingAcks.add(name);
-		missingAcks.remove(myName); //you aren't missing an ack from yourself
 		ackLock.lock();
 		for(int i = 0; i < ackQueue.size(); i++){
 			if(msg.isACK(ackQueue.get(i))){
@@ -195,7 +194,7 @@ public class Group {
 			}
 		}
 		ackLock.unlock();
-		if(count == (members.size()-1)){
+		if(count == (members.size())){
 			//need an ack from everybody except yourself to have all acks
 			return true;
 		}
