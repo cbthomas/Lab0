@@ -43,6 +43,8 @@ public class MessagePasserTester {
 						MP.releaseCS();						
 					}else if(selection == 3){
 						//System.out.println(MP.getMessageCount());
+						System.out.println("Total Messages Sent: " + MP.getSentCount());
+						System.out.println("Total Messages Received: " + MP.getRecievedCount());
 					}
 					else if(selection == 4){
 						

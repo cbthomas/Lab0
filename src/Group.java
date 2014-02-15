@@ -101,7 +101,7 @@ public class Group {
 			ackQueue.add(msg);
 			Collections.sort(ackQueue);
 		}
-		//System.out.println("ackQueue: " + ackQueue);
+		//System.out.println("ackQueue for group " + gName + ": " + ackQueue);
 		ackLock.unlock();
 	}
 	public ArrayList<String> missingAck(TimeStampedMessage msg){
@@ -153,6 +153,7 @@ public class Group {
 		holdbackLock.lock();
 		holdbackQueue.add(msg);
 		Collections.sort(holdbackQueue);
+		//System.out.println("HBQ of " + gName +": " + holdbackQueue);
 		holdbackLock.unlock();
 	}
 	public TimeStampedMessage getFromHoldbackQueue(TimeStampedMessage ackForMsg){

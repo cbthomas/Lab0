@@ -20,6 +20,8 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.yaml.snakeyaml.Yaml;
 
@@ -50,6 +52,9 @@ public class MessagePasser {
     //Mutual Exclusion variables
     public static boolean voted;
     public static String state;
+    public static int sentMsgCount;
+    public static int receivedMsgCount;
+    private static Lock countLock;
     
 	public MessagePasser(String configuration_filename, String local_name){
 		//parse configuration_filename and setup sockets for communicating with all processes
@@ -73,6 +78,10 @@ public class MessagePasser {
 		
 		voted = false;
 		state = "RELEASED";
+		sentMsgCount = 0;
+		receivedMsgCount = 0;
+		countLock = new ReentrantLock();
+		
 		try { 
 			//try opening the configuration_filename
 			File config_file = new File(configuration_filename);
@@ -354,6 +363,12 @@ public class MessagePasser {
 					//This is a blocking call that should only move on once we read in a full Message object
 					//System.out.println("waiting to read in a message from a listening thread");
 					TimeStampedMessage msg = (TimeStampedMessage) ois.readObject();	
+					//We want to count recieved messages of certain kinds
+					if(msg.get_kind().equals("REQUEST") || msg.get_kind().equals("RELEASE")){
+						countLock.lock();
+						receivedMsgCount++;
+						countLock.unlock();
+					}
 					if(!identified_source){
 						modify_nodes(msg.get_dest(), node, 1);
 						for(User usr : users){
@@ -463,6 +478,8 @@ public class MessagePasser {
 							nextMsg.setTimeStamp(msg.copyMsgTimeStamp());
 							messageGroup.addToAckQueue(nextMsg);
 							voted = true;
+							//if(msg.get_kind().equals("ACK"))
+								//sentMsgCount++; //this is the one reply ACK back to the sender for a REQUEST or RELEASE message
 						}
 
 					}
@@ -536,6 +553,8 @@ public class MessagePasser {
 		try {
 			ObjectOutputStream oos = new ObjectOutputStream(sendSocket.getOutputStream());
 			oos.writeObject(msg);
+			if(msg.get_kind().equals("REQUEST") || msg.get_kind().equals("RELEASE"))
+				sentMsgCount++;
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			System.out.println("Failed to send message to " + msg.get_dest() + " of kind " + msg.get_kind() + " of seqNum " + msg.get_seqNum() 
@@ -581,6 +600,7 @@ public class MessagePasser {
 					return true;
 				}
 				currGroup.addToAckQueue(msg); //add to the queue that we got an ACK
+				//Check and see if msg is an ACK for a message you created (src=local_user.getName()), if it is, you count the receive message				
 				gotFinalACK(msg);
 				return true;
 			}
@@ -606,6 +626,7 @@ public class MessagePasser {
 				//if this is a message I've delivered, just send an ACK back
 				//otherwise, send a NACK to the creator
 				//	  also, count this as an ACK if you don't have it already
+				boolean requestMsg = false;
 				TimeStampedMessage checkMsg = new TimeStampedMessage(msg.get_dest(), msg.get_kind(), msg.get_data(), false);
 				checkMsg.set_source(requestor);
 				checkMsg.setTimeStamp(msg.copyMsgTimeStamp());
@@ -615,16 +636,25 @@ public class MessagePasser {
 				if(!seenCheck){
 					//we also need to check the global HBQ, just in case we removed it from the group, but haven't delivered it yet
 					for(TimeStampedMessage inQueueMsg : holdbackQueue){
-						if(inQueueMsg.equals(checkMsg))
+						if(inQueueMsg.equals(checkMsg)){
 							seenCheck = true;
+							if(inQueueMsg.get_kind().equals("REQUEST"))
+								requestMsg = true;
+						}
 					}
 				}
 				if( seenCheck ){
 					//this message is either in my group holdbackqueue or i've already delivered it, so just send an ACK back
-					//System.out.println("RACK response: i've seen it, sending an ACK");
+					
 					checkMsg.set_dest(msg.get_source());
+					if(currGroup.peekAtHBQ().get_kind().equals("REQUEST"))
+						requestMsg = true;
+					if(requestMsg == true && voted==true)
+						return true; //don't send an ACK back for a request if we're waiting for a RELEASE
+					
 					checkMsg.set_kind("ACK");
 					checkMsg.set_source(local_user.getName());
+					System.out.println("RACK response: i've seen it, sending an ACK" + checkMsg);
 					applySendRules(checkMsg);
 					//outgoing_buffer.addFirst(checkMsg);
 					modify_outgoing();//send the ACK back
@@ -669,8 +699,12 @@ public class MessagePasser {
 							modify_outgoing(); //actually send the messages. This will go through and split them up into msg/user instead of /group
 							voted = true;
 						}
+
 					}
 					else{
+						if(msg.get_kind().equals("RELEASE")){
+							voted=false;
+						}
 						applySendRules(rDeliverMsg);
 						//outgoing_buffer.addFirst(rDeliverMsg);
 						//System.out.println("Just got a normal group message. Sending ACKs");
@@ -686,6 +720,8 @@ public class MessagePasser {
 				}
 				else{
 					//if we have seen it, just send an ACK back
+					if(msg.get_kind().equals("REQUEST") && voted==true)
+						return true;
 					rDeliverMsg.set_dest(msg.get_source());
 					//System.out.println("Got a message I've seen before, sending ACK back to " + rDeliverMsg.get_dest());
 					//System.out.println("with message: " + rDeliverMsg);					
@@ -871,14 +907,16 @@ public class MessagePasser {
 		
 	}
 	public static void requestCS(){
-		if(!state.equals("HELD")){
+		if(!state.equals("HELD") && !state.equals("WANTED")){
 			String myGroupName = "group"+local_user.getName();
-			Group myGroup = groups.get(myGroupName);
-			TimeStampedMessage requestMsg = new TimeStampedMessage(myGroupName, "REQUEST", "doesn't matter", false);
+			TimeStampedMessage requestMsg = new TimeStampedMessage(myGroupName, "REQUEST", "countme", false);
 			send(requestMsg);
+			state = "WANTED";
 		}
-		else
+		else if(state.equals("HELD"))
 			System.out.println("Sorry, you already have the critical section. Please wait to request until you have released it.");
+		else if(state.equals("WANTED"))
+			System.out.println("Sorry, you already requested the critical section. Please wait until you get it.");
 		return;
 	}
 	public static void releaseCS(){
@@ -886,17 +924,21 @@ public class MessagePasser {
 			state = "RELEASE";
 			voted=false;
 			System.out.println("You have just exited the critical section.");
+			String myGroupName = "group"+local_user.getName();
+			TimeStampedMessage requestMsg = new TimeStampedMessage(myGroupName, "RELEASE", "doesn't matter", false);
+			send(requestMsg);
 		}
 		else
 			System.out.println("You must first have the critical section to release it. Sorry.");
 		return;
 	}
-	private static void gotFinalACK(TimeStampedMessage msg){
+	private static synchronized void gotFinalACK(TimeStampedMessage msg){
 		Group currGroup = groups.get(msg.getGroup());
 		if(currGroup.allAcks(msg)){
 			//This means the message we just got was the last ACK we needed
 			currGroup.removeFromAckQueue(msg);
 			TimeStampedMessage addToHBQ = currGroup.getFromHoldbackQueue(msg);
+			//System.out.println("Just removed from group HBQ\n" + addToHBQ);
 			if(true){
 				holdbackQueue.add(addToHBQ); //don't add messages we created to the overall HBQ
 				//check kind of message to see if we got all of the ACKs required for a REQUEST or RELEASE message
@@ -925,14 +967,16 @@ public class MessagePasser {
 									newACK.setTimeStamp(delayedMessage.copyMsgTimeStamp());
 									newACK.set_source(local_user.getName());
 									outgoing_buffer.addFirst(newACK);
+									//System.out.println("Just removed RELEASE, now ACKing " + delayedMessage);
 									modify_outgoing(); //this will also add our ACK to our own ACK queue
 									if(groups.get(groupName).allAcks(delayedMessage)){
 										if(delayedMessage.get_source().equals(local_user.getName())){
 											//we want to vote for ourselves
-											state = "HELD";
-											groups.get(groupName).removeFromAckQueue(delayedMessage); //might have an issue here
-											groups.get(groupName).getFromHoldbackQueue(delayedMessage);														
+											state = "HELD";		
+											System.out.println("Congratualations. You now have the critical source.");
 										}
+										groups.get(groupName).removeFromAckQueue(delayedMessage); 
+										groups.get(groupName).getFromHoldbackQueue(delayedMessage);	
 										voted = true;
 										return;
 									}
@@ -946,5 +990,11 @@ public class MessagePasser {
 				}
 			}
 		}
+	}
+	public static int getSentCount(){
+		return sentMsgCount;
+	}
+	public static int getRecievedCount(){
+		return receivedMsgCount;
 	}
 }
