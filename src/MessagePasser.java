@@ -288,6 +288,8 @@ public class MessagePasser {
 				duped.set_source(local_user.getName());
 				duped.set_duplicate(true);
 				duped.set_delayed(false);
+				duped.setTimeStamp(message.copyMsgTimeStamp());
+				duped.setGroup(message.getGroup());
 				outgoing_buffer.addFirst(duped);
 			}
 		}
@@ -478,8 +480,8 @@ public class MessagePasser {
 							nextMsg.setTimeStamp(msg.copyMsgTimeStamp());
 							messageGroup.addToAckQueue(nextMsg);
 							voted = true;
-							//if(msg.get_kind().equals("ACK"))
-								//sentMsgCount++; //this is the one reply ACK back to the sender for a REQUEST or RELEASE message
+							if(msg.get_kind().equals("ACK"))
+								sentMsgCount++; //this is the one reply ACK back to the sender for a REQUEST or RELEASE message
 						}
 
 					}
@@ -553,8 +555,10 @@ public class MessagePasser {
 		try {
 			ObjectOutputStream oos = new ObjectOutputStream(sendSocket.getOutputStream());
 			oos.writeObject(msg);
-			if(msg.get_kind().equals("REQUEST") || msg.get_kind().equals("RELEASE"))
+			if(msg.get_kind().equals("REQUEST") || msg.get_kind().equals("RELEASE")){
 				sentMsgCount++;
+				//System.out.println("just sent: " + msg + msg.get_dest());
+			}
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			System.out.println("Failed to send message to " + msg.get_dest() + " of kind " + msg.get_kind() + " of seqNum " + msg.get_seqNum() 
@@ -600,7 +604,12 @@ public class MessagePasser {
 					return true;
 				}
 				currGroup.addToAckQueue(msg); //add to the queue that we got an ACK
-				//Check and see if msg is an ACK for a message you created (src=local_user.getName()), if it is, you count the receive message				
+				//Check and see if msg is an ACK for a message you created (src=local_user.getName()), if it is, you count the receive message		
+				if(currGroup.isMyACK(msg, local_user.getName())){
+					countLock.lock();
+					receivedMsgCount++;
+					countLock.unlock();
+				}
 				gotFinalACK(msg);
 				return true;
 			}
@@ -720,8 +729,10 @@ public class MessagePasser {
 				}
 				else{
 					//if we have seen it, just send an ACK back
-					if(msg.get_kind().equals("REQUEST") && voted==true)
+					if(msg.get_kind().equals("REQUEST") && voted==true){
+						//System.out.println("Just saw a REQUEST we've seen before: " + msg);
 						return true;
+					}
 					rDeliverMsg.set_dest(msg.get_source());
 					//System.out.println("Got a message I've seen before, sending ACK back to " + rDeliverMsg.get_dest());
 					//System.out.println("with message: " + rDeliverMsg);					

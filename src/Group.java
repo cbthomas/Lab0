@@ -207,4 +207,15 @@ public class Group {
 	public TimeStamp getSingleTS(String name){
 		return groupTS.getTimeStamp(name);
 	}
+	public boolean isMyACK(TimeStampedMessage msg, String myName){
+		//return true if msg is an ACK for a REQUEST message where the REQUEST message's source = myName
+		boolean myAck = false;
+		holdbackLock.lock();
+		for(TimeStampedMessage inQueue : holdbackQueue){
+			if(inQueue.isACK(msg) && inQueue.get_source().equals(myName))
+				myAck = true;
+		}
+		holdbackLock.unlock();
+		return myAck;
+	}
 }
